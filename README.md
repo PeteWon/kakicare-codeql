@@ -4,8 +4,9 @@ KakiCare is an internal coordination platform for an elderly **befriending progr
 Singapore, built for ICT2216 Secure Software Development (Team 18). Vetted community
 **volunteers** are matched with **seniors** to visit or call them, while **staff** manage
 volunteer applications, senior records, matches, and an audit log. Seniors are records
-managed by staff and never log in. This repository currently contains the **frontend**; the
-backend is built separately and the frontend talks to it over a typed API layer.
+managed by staff and never log in. This repository is a monorepo: the **frontend** lives at
+the root and the Django **backend** lives in `backend/`. The frontend talks to the backend
+over a typed API layer.
 
 ## Tech stack
 
@@ -52,3 +53,71 @@ VITE_API_BASE_URL=http://localhost:8000
 > The API layer (`src/lib/api.ts`) currently returns mock data so the frontend runs before
 > the backend exists. Each function is marked `// MOCK` with the real call commented above
 > it; see the migration plan at the top of that file.
+
+## Backend — running locally
+
+The backend (`backend/`) is **Django + Django REST Framework** on **PostgreSQL**. For local
+development we run Postgres in a single Docker container and Django natively on the host.
+
+**Prerequisites:** Python 3.11+, and Docker Desktop (or Docker Engine + Compose v2).
+
+**1. Create your backend `.env`** (it is gitignored — never commit it):
+
+```bash
+cd backend
+cp .env.example .env        # PowerShell: Copy-Item .env.example .env
+```
+
+Then edit `backend/.env` and set at least:
+
+```env
+SECRET_KEY=<paste a generated key>   # see command below
+POSTGRES_PASSWORD=<choose any local password>
+```
+
+Generate a `SECRET_KEY` with:
+
+```bash
+python -c "from django.core.management.utils import get_random_secret_key as g; print(g())"
+```
+
+The other values (`POSTGRES_DB=kakicare`, `POSTGRES_USER=kakicare`, `POSTGRES_HOST=localhost`,
+`POSTGRES_PORT=5432`, `DEBUG=True`, `ALLOWED_HOSTS=localhost,127.0.0.1`) can stay as shipped.
+Postgres reads `POSTGRES_*` from this same file via `docker-compose.yml`.
+
+**2. Start PostgreSQL** (run from the repository root, where `docker-compose.yml` is):
+
+```bash
+docker compose up -d
+```
+
+Postgres listens on `127.0.0.1:5432` only, and its data persists in the named volume
+`kakicare_pgdata` across restarts.
+
+**3. Set up Python and run Django** (from `backend/`):
+
+```bash
+cd backend
+python -m venv .venv
+
+# Activate the virtualenv:
+#   PowerShell:        .venv\Scripts\Activate.ps1
+#   Windows cmd:       .venv\Scripts\activate.bat
+#   macOS / Linux:     source .venv/bin/activate
+
+pip install -r requirements.txt
+python manage.py migrate
+python manage.py createsuperuser   # use an email + full name (no username)
+python manage.py runserver
+```
+
+Django serves at <http://127.0.0.1:8000>. Log in to the admin at
+<http://127.0.0.1:8000/admin/> with the superuser you created to browse the data models.
+
+**Stop / reset:**
+
+```bash
+docker compose down            # stop the container (data is kept)
+docker compose down -v         # stop AND delete the database volume (full reset)
+```
+
