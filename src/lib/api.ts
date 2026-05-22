@@ -1,10 +1,23 @@
-// Typed fetch wrapper for the KakiCare backend.
+// API layer for the KakiCare backend.
 //
-// The functions below currently return MOCK data so the frontend runs before
-// the backend exists. Each mock is clearly marked with `// MOCK`. To go live,
-// replace the mock body with the commented `apiFetch(...)` call directly above
-// it — the function signatures and return types stay identical, so swapping is
-// a localised change.
+// MOCK-TO-REAL MIGRATION PLAN
+// ---------------------------
+// Today every function in the `api` object returns MOCK data so the frontend
+// runs before the backend exists. Each mock implementation is marked `// MOCK`,
+// and the real call is written out (commented) directly above it.
+//
+// `apiFetch<T>()` below is the single shared request helper the real calls use:
+// it prefixes VITE_API_BASE_URL, sends `credentials: 'include'` so the HttpOnly
+// session cookie travels with each request, sets JSON headers, and throws
+// `ApiError` on non-2xx. (The one exception is `submitProfile`, which sends
+// multipart/form-data and therefore uses `fetch` directly — see its note.)
+//
+// To go live with an endpoint:
+//   1. Uncomment the `apiFetch(...)` / `fetch(...)` call above the mock.
+//   2. Delete the `// MOCK` lines below it.
+// Function signatures and return types (from ./types) stay identical, so each
+// swap is a localised, near-one-line change. Once all are swapped, the entire
+// "MOCK data store" section can be deleted.
 
 import type {
   AuditLogEntry,
@@ -220,7 +233,7 @@ export const api = {
 
   // --- Session / current user --------------------------------------------
   async getCurrentUser(): Promise<User> {
-    // return apiFetch<User>('/api/me');
+    // return apiFetch<User>('/api/auth/me');
     return delay(mockUser); // MOCK
   },
 

@@ -12,6 +12,7 @@
 
 import { createBrowserRouter } from 'react-router-dom';
 
+import { ProtectedRoute } from './components/ProtectedRoute';
 import { PublicLayout } from './layouts/PublicLayout';
 import { VolunteerLayout } from './layouts/VolunteerLayout';
 import { StaffLayout } from './layouts/StaffLayout';
@@ -38,16 +39,27 @@ export const router = createBrowserRouter([
     ],
   },
   {
-    path: '/volunteer',
-    element: <VolunteerLayout />,
+    // Role-gated on the client (UX only — see ProtectedRoute security note).
+    element: <ProtectedRoute role="volunteer" />,
     children: [
-      { index: true, element: <VolunteerHome /> },
-      { path: 'profile', element: <CompleteProfile /> },
+      {
+        path: '/volunteer',
+        element: <VolunteerLayout />,
+        children: [
+          { index: true, element: <VolunteerHome /> },
+          { path: 'profile', element: <CompleteProfile /> },
+        ],
+      },
     ],
   },
   {
-    path: '/staff',
-    element: <StaffLayout />,
-    children: [{ index: true, element: <StaffDashboard /> }],
+    element: <ProtectedRoute role="staff" />,
+    children: [
+      {
+        path: '/staff',
+        element: <StaffLayout />,
+        children: [{ index: true, element: <StaffDashboard /> }],
+      },
+    ],
   },
 ]);

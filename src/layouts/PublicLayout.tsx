@@ -29,7 +29,7 @@ export function PublicLayout() {
 
       <footer className="border-t border-cream-300">
         <div className="mx-auto max-w-5xl px-4 py-6 text-sm text-primary-400">
-          KakiCare — caring for our seniors, together.
+          KakiCare — Connecting Hearts, Supporting Seniors.
         </div>
       </footer>
     </div>
