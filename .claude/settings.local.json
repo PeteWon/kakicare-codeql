@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm --version)",
+      "Read(//c/Users/brand/.claude/projects/C--Users-brand-ICT2216-TEAM-18-SSD/memory/**)",
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(npm install *)",
+      "Bash(npx tsc *)",
+      "Bash(echo \"TSC_EXIT:$?\")",
+      "Bash(npm run *)",
+      "Read(//tmp/**)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173/)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173/login)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173/volunteer)",
+      "Bash(kill %1)",
+      "Bash(npm audit *)"
+    ]
+  }
+}
