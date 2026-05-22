@@ -11,6 +11,9 @@ import type {
   LoginResult,
   Match,
   MfaResult,
+  ProfileDocuments,
+  ProfileSubmission,
+  ProfileSubmissionResult,
   Senior,
   Session,
   User,
@@ -219,6 +222,39 @@ export const api = {
   async getCurrentUser(): Promise<User> {
     // return apiFetch<User>('/api/me');
     return delay(mockUser); // MOCK
+  },
+
+  // --- Volunteer profile completion --------------------------------------
+  // Submit the profile + identity/declaration documents for staff vetting.
+  //
+  // SECURITY: file-type/size checks done on the client (in FileUpload) are
+  // USABILITY ONLY and trivially bypassable. The BACKEND must independently
+  // validate the real content type by inspecting magic bytes (NOT the
+  // extension or client-sent MIME type), enforce the size limit, store files
+  // OUTSIDE the web root, and serve them only via an authenticated, authorised
+  // endpoint (abuse case AC-10; SR-DATA-03, SR-DATA-04). The real request sends
+  // multipart/form-data (FormData), NOT JSON, so it bypasses the JSON apiFetch
+  // wrapper and uses fetch directly — letting the browser set the multipart
+  // boundary itself.
+  async submitProfile(
+    data: ProfileSubmission,
+    files: ProfileDocuments,
+  ): Promise<ProfileSubmissionResult> {
+    // const form = new FormData();
+    // form.append('profile', JSON.stringify(data));
+    // form.append('identityDocument', files.identityDocument);
+    // form.append('declarationForm', files.declarationForm);
+    // const res = await fetch(`${BASE_URL}/api/volunteer/profile`, {
+    //   method: 'POST',
+    //   credentials: 'include',
+    //   body: form,
+    // });
+    // return (await res.json()) as ProfileSubmissionResult;
+
+    // MOCK: accept anything and report the application as pending review.
+    void data;
+    void files;
+    return delay({ status: 'success' }); // MOCK
   },
 
   // --- Volunteers ---------------------------------------------------------

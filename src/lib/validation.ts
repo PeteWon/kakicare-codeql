@@ -45,3 +45,15 @@ export const matches =
   (other: string, label = 'Values'): Validator =>
   (value) =>
     value === other ? null : `${label} do not match.`;
+
+// Loose Singapore phone check (usability only). Accepts an optional +65 / 65
+// prefix and 8 local digits commonly starting 3/6/8/9. Spacing/dashes ignored.
+// Deliberately permissive — the backend is the authoritative validator.
+const SG_PHONE_RE = /^(?:\+?65)?[3689]\d{7}$/;
+
+export const phoneSG =
+  (label = 'Contact number'): Validator =>
+  (value) =>
+    SG_PHONE_RE.test(value.replace(/[\s-]/g, ''))
+      ? null
+      : `Please enter a valid Singapore ${label.toLowerCase()}.`;

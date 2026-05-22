@@ -23,6 +23,7 @@ import { VerifyEmail } from './pages/public/VerifyEmail';
 import { NotFound } from './pages/public/NotFound';
 
 import { VolunteerHome } from './pages/volunteer/VolunteerHome';
+import { CompleteProfile } from './pages/volunteer/CompleteProfile';
 import { StaffDashboard } from './pages/staff/StaffDashboard';
 
 export const router = createBrowserRouter([
@@ -39,7 +40,10 @@ export const router = createBrowserRouter([
   {
     path: '/volunteer',
     element: <VolunteerLayout />,
-    children: [{ index: true, element: <VolunteerHome /> }],
+    children: [
+      { index: true, element: <VolunteerHome /> },
+      { path: 'profile', element: <CompleteProfile /> },
+    ],
   },
   {
     path: '/staff',

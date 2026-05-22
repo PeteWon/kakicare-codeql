@@ -39,6 +39,32 @@ export type VerifyEmailResult =
   | { status: 'success' } // token accepted, account activated
   | { status: 'invalid' }; // invalid / used / expired — generic failure
 
+// --- Volunteer profile completion --------------------------------------------
+
+export type Weekday = 'Mon' | 'Tue' | 'Wed' | 'Thu' | 'Fri' | 'Sat' | 'Sun';
+export type TimeBlock = 'Morning' | 'Afternoon' | 'Evening';
+export type Region = 'North' | 'South' | 'East' | 'West' | 'Central';
+
+/** Profile data a volunteer submits for staff vetting (excludes the files). */
+export interface ProfileSubmission {
+  phone: string;
+  languages: string[];
+  areas: Region[];
+  availabilityDays: Weekday[];
+  availabilityBlocks: TimeBlock[];
+  about: string; // optional free text, max 500 chars
+}
+
+/** The two documents a volunteer must upload alongside their profile. */
+export interface ProfileDocuments {
+  identityDocument: File;
+  declarationForm: File;
+}
+
+export type ProfileSubmissionResult =
+  | { status: 'success' } // application now pending staff review
+  | { status: 'error' }; // generic failure — surface a retry, no detail
+
 /** An authenticated account. Either a volunteer or a staff member. */
 export interface User {
   id: string;
