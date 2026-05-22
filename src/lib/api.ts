@@ -8,10 +8,13 @@
 
 import type {
   AuditLogEntry,
+  LoginResult,
   Match,
+  MfaResult,
   Senior,
   Session,
   User,
+  VerifyEmailResult,
   VolunteerProfile,
 } from './types';
 
@@ -162,6 +165,56 @@ const mockAuditLog: AuditLogEntry[] = [
 // Each function shows the real call (commented) and the mock it currently uses.
 
 export const api = {
+  // --- Authentication -----------------------------------------------------
+  // On a real 'success'/'mfa_required', the backend sets a secure, HttpOnly
+  // session cookie. The frontend NEVER receives or stores a token — it only
+  // reads the status. Do not return tokens from these functions.
+  //
+  // SECURITY: the MFA gate is enforced server-side. A staff account can never
+  // reach 'success' from `login` alone — the backend issues a fully-privileged
+  // session only after `verifyMfa` succeeds. The two-step UI below is a
+  // convenience, not the security boundary.
+  async login(_email: string, _password: string): Promise<LoginResult> {
+    // return apiFetch<LoginResult>('/api/auth/login', {
+    //   method: 'POST',
+    //   body: { email: _email, password: _password },
+    // });
+
+    // MOCK: outcome is driven by the email so we can exercise every UI state.
+    // The password is never inspected here and is never logged or persisted.
+    const normalized = _email.trim().toLowerCase();
+    if (normalized.startsWith('staff')) return delay({ status: 'mfa_required' }); // MOCK
+    if (normalized.startsWith('volunteer')) return delay({ status: 'success' }); // MOCK
+    return delay({ status: 'invalid' }); // MOCK — generic failure for anything else
+  },
+
+  async verifyMfa(_code: string): Promise<MfaResult> {
+    // return apiFetch<MfaResult>('/api/auth/mfa', {
+    //   method: 'POST',
+    //   body: { code: _code },
+    // });
+
+    // MOCK: accept the well-known code "123456", reject everything else.
+    return delay(_code === '123456' ? { status: 'success' } : { status: 'invalid' }); // MOCK
+  },
+
+  // Verify an email-verification token from a /verify-email?token=... link.
+  //
+  // SECURITY: the token is single-use and time-limited — that is enforced by
+  // the BACKEND, not here. The frontend only forwards the token (over HTTPS)
+  // and reflects the result. The token must never be logged or persisted to
+  // localStorage/sessionStorage. The failure outcome is generic regardless of
+  // whether the token is invalid, already used, or expired.
+  async verifyEmail(_token: string): Promise<VerifyEmailResult> {
+    // return apiFetch<VerifyEmailResult>('/api/auth/verify-email', {
+    //   method: 'POST',
+    //   body: { token: _token },
+    // });
+
+    // MOCK: any token succeeds except the literal "expired".
+    return delay(_token === 'expired' ? { status: 'invalid' } : { status: 'success' }); // MOCK
+  },
+
   // --- Session / current user --------------------------------------------
   async getCurrentUser(): Promise<User> {
     // return apiFetch<User>('/api/me');

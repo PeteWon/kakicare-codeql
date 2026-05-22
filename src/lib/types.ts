@@ -11,6 +11,34 @@ export type UserRole = 'volunteer' | 'staff';
 
 export type ISODateString = string; // e.g. "2026-05-22T08:30:00Z"
 
+// --- Authentication results --------------------------------------------------
+// Outcomes the backend can return from a login attempt. The frontend does not
+// know in advance whether an email is a volunteer or staff account — the flow
+// is driven entirely by these responses.
+//
+// SECURITY: 'invalid' is intentionally a single, reason-less outcome. The
+// backend MUST return the same generic failure whether the email is unknown,
+// the password is wrong, or the account is inactive (prevents account
+// enumeration — SR-AUTH-06).
+
+export type LoginResult =
+  | { status: 'success' } // logged in (e.g. volunteer, no MFA) — session cookie set
+  | { status: 'mfa_required' } // credentials OK, TOTP step required (e.g. staff)
+  | { status: 'invalid' }; // generic failure — never reveal the reason
+
+export type MfaResult =
+  | { status: 'success' } // TOTP verified — session cookie set
+  | { status: 'invalid' }; // wrong/expired code — generic failure
+
+// Result of clicking an email-verification link.
+//
+// SECURITY: 'invalid' is a single, reason-less outcome. The backend MUST return
+// the same failure whether the token is unknown, already used, or expired —
+// never reveal token state (consistent with our anti-enumeration stance).
+export type VerifyEmailResult =
+  | { status: 'success' } // token accepted, account activated
+  | { status: 'invalid' }; // invalid / used / expired — generic failure
+
 /** An authenticated account. Either a volunteer or a staff member. */
 export interface User {
   id: string;
