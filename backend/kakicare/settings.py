@@ -158,6 +158,8 @@ REST_FRAMEWORK = {
         'mfa_verify': '10/15min',
         # 5 password-reset requests per hour per source IP.
         'password_reset': '5/hour',
+        # 30 senior-list requests per minute per source IP (AC-02/AC-06).
+        'senior_list': '30/min',
     },
 }
 
