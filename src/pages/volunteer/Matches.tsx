@@ -179,6 +179,34 @@ function ProposedMatchCard({
 }
 
 // ---------------------------------------------------------------------------
+// Pending confirmation card — volunteer accepted, waiting for senior consent
+// ---------------------------------------------------------------------------
+
+function PendingConfirmationCard({ match }: { match: VolunteerMatch }) {
+  return (
+    <Card>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="font-semibold text-primary-900">{match.senior.first_name}</p>
+          <p className="mt-0.5 text-sm text-primary-600">
+            {[match.senior.preferred_language, match.senior.locality]
+              .filter(Boolean)
+              .join(' · ')}
+          </p>
+        </div>
+        <span className="shrink-0 rounded-full bg-primary-100 px-2.5 py-0.5 text-xs font-medium text-primary-700">
+          Awaiting confirmation
+        </span>
+      </div>
+      <p className="mt-3 text-sm text-primary-600">
+        You've accepted this match. Our team will contact {match.senior.first_name}{' '}
+        to record their consent — the match becomes active once both sides confirm.
+      </p>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Active match card — shows senior info (limited) and session booking link
 // ---------------------------------------------------------------------------
 
@@ -253,7 +281,14 @@ export function Matches() {
     void loadMatches();
   }, [loadMatches]);
 
-  const proposedMatches = matches.filter((m) => m.status === 'proposed');
+  // "proposed" covers two sub-states: volunteer hasn't responded yet, OR
+  // volunteer accepted but senior consent hasn't been recorded yet (double opt-in).
+  const needsResponse = matches.filter(
+    (m) => m.status === 'proposed' && m.volunteer_accepted_at === null,
+  );
+  const pendingConfirmation = matches.filter(
+    (m) => m.status === 'proposed' && m.volunteer_accepted_at !== null,
+  );
   const activeMatches = matches.filter((m) => m.status === 'active');
 
   return (
@@ -286,7 +321,7 @@ export function Matches() {
       {!loading && !error && (
         <>
           {/* ---- Proposed matches — need a response ---- */}
-          {proposedMatches.length > 0 && (
+          {needsResponse.length > 0 && (
             <section aria-labelledby="proposed-heading">
               <div className="mb-3">
                 <CardTitle id="proposed-heading">Waiting for your response</CardTitle>
@@ -296,12 +331,30 @@ export function Matches() {
                 </p>
               </div>
               <div className="space-y-3">
-                {proposedMatches.map((m) => (
+                {needsResponse.map((m) => (
                   <ProposedMatchCard
                     key={m.id}
                     match={m}
                     onAction={() => void loadMatches()}
                   />
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* ---- You accepted — waiting for senior confirmation ---- */}
+          {pendingConfirmation.length > 0 && (
+            <section aria-labelledby="pending-heading">
+              <div className="mb-3">
+                <CardTitle id="pending-heading">Pending senior confirmation</CardTitle>
+                <p className="mt-1 text-sm text-primary-600">
+                  You've accepted these matches. Our team will contact the senior
+                  to record their consent.
+                </p>
+              </div>
+              <div className="space-y-3">
+                {pendingConfirmation.map((m) => (
+                  <PendingConfirmationCard key={m.id} match={m} />
                 ))}
               </div>
             </section>
@@ -316,8 +369,8 @@ export function Matches() {
             {activeMatches.length === 0 ? (
               <Card>
                 <p className="text-sm text-primary-600">
-                  {proposedMatches.length > 0
-                    ? 'No active matches yet. Accept a proposed match above to get started.'
+                  {needsResponse.length > 0 || pendingConfirmation.length > 0
+                    ? 'No active matches yet. Matches become active once both you and the senior confirm.'
                     : 'No matches yet. Our team will propose a befriending match when one is ready for you.'}
                 </p>
               </Card>
