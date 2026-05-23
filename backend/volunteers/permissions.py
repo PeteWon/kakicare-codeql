@@ -10,6 +10,7 @@ permission class; never rely on the frontend to keep a user out.
 from rest_framework.permissions import BasePermission
 
 from accounts.models import User
+from volunteers.models import VolunteerProfile
 
 
 class IsVolunteer(BasePermission):
@@ -30,6 +31,33 @@ class IsVolunteer(BasePermission):
             # we double-check so this class is safe to use in isolation.
             and user.is_email_verified
         )
+
+
+class IsApprovedVolunteer(BasePermission):
+    """Allow approved, email-verified volunteers only.
+
+    SR-AUTHZ-01: enforced server-side on every request.
+    AC-05: unvetted volunteers must not access match data or accept proposals —
+    only volunteers who have passed staff vetting (application_status='approved')
+    may interact with matches. This is checked here so no view needs to repeat it.
+    """
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not (
+            user
+            and user.is_authenticated
+            and user.role == User.Role.VOLUNTEER
+            and user.is_email_verified
+        ):
+            return False
+        try:
+            return (
+                user.volunteer_profile.application_status
+                == VolunteerProfile.ApplicationStatus.APPROVED
+            )
+        except VolunteerProfile.DoesNotExist:
+            return False
 
 
 class IsStaff(BasePermission):
