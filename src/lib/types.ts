@@ -154,6 +154,107 @@ export interface Session {
   createdAt: ISODateString;
 }
 
+// ---------------------------------------------------------------------------
+// Volunteer-facing backend types (real API shapes, snake_case from Django)
+// ---------------------------------------------------------------------------
+
+/** DRF paginated response wrapper. */
+export interface Paginated<T> {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: T[];
+}
+
+/**
+ * Limited senior info — the ONLY senior data the backend sends to volunteers
+ * on the matches endpoint (SR-AUTHZ-02/03 data minimisation).
+ *
+ * SECURITY: Do NOT add address, phone, or next_of_kin fields here. The
+ * backend deliberately omits them. Full contact details are disclosed
+ * just-in-time at session time only (see VolunteerSession).
+ */
+export interface VolunteerMatchSenior {
+  id: number;
+  first_name: string;
+  preferred_language: string;
+  locality: string;
+}
+
+export type VolunteerMatchStatus = 'proposed' | 'active' | 'ended';
+
+/** A match as returned by GET /api/volunteer/matches/ */
+export interface VolunteerMatch {
+  id: number;
+  status: VolunteerMatchStatus;
+  senior: VolunteerMatchSenior;
+  volunteer_accepted_at: string | null;
+  senior_confirmed_at: string | null;
+  created_at: string;
+}
+
+export type SessionStatus =
+  | 'pending_confirmation'
+  | 'confirmed'
+  | 'in_progress'
+  | 'completed'
+  | 'missed'
+  | 'cancelled';
+
+/** Senior info embedded in a session response. May be limited or full
+ *  depending on whether the JIT disclosure window is open. */
+export interface SessionSenior {
+  id: number;
+  // Always present (limited view)
+  first_name?: string;
+  preferred_language: string;
+  locality?: string;
+  // Present only inside the JIT disclosure window
+  full_name?: string;
+  address?: string;
+  phone_number?: string;
+  next_of_kin_name?: string;
+  next_of_kin_contact?: string;
+}
+
+/** A session as returned by GET /api/volunteer/sessions/ */
+export interface VolunteerSession {
+  id: number;
+  session_type: 'visit' | 'call';
+  scheduled_start: string;
+  scheduled_end: string;
+  status: SessionStatus;
+  checkin_at: string | null;
+  checkout_at: string | null;
+  volunteer_note: string | null;
+  /** Whether the JIT disclosure window is currently open (server-computed). */
+  jit_disclosure_active: boolean;
+  senior: SessionSenior;
+  created_at: string;
+}
+
+export type ApplicationStatus =
+  | 'incomplete'
+  | 'pending_review'
+  | 'approved'
+  | 'rejected'
+  | 'changes_requested';
+
+/** Volunteer's own profile from GET /api/volunteer/profile/ */
+export interface VolunteerProfileData {
+  id: number;
+  contact_number: string;
+  languages: string[];
+  travel_areas: string[];
+  availability: Record<string, string[]>;
+  about_text: string;
+  application_status: ApplicationStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+// ---------------------------------------------------------------------------
+
 /** Append-only audit record. Security-relevant actions are logged server-side. */
 export interface AuditLogEntry {
   id: string;

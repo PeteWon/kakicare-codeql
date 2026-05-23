@@ -23,7 +23,8 @@ import { Register } from './pages/public/Register';
 import { VerifyEmail } from './pages/public/VerifyEmail';
 import { NotFound } from './pages/public/NotFound';
 
-import { VolunteerHome } from './pages/volunteer/VolunteerHome';
+import { Dashboard } from './pages/volunteer/Dashboard';
+import { Matches } from './pages/volunteer/Matches';
 import { CompleteProfile } from './pages/volunteer/CompleteProfile';
 import { StaffDashboard } from './pages/staff/StaffDashboard';
 
@@ -46,7 +47,8 @@ export const router = createBrowserRouter([
         path: '/volunteer',
         element: <VolunteerLayout />,
         children: [
-          { index: true, element: <VolunteerHome /> },
+          { index: true, element: <Dashboard /> },
+          { path: 'matches', element: <Matches /> },
           { path: 'profile', element: <CompleteProfile /> },
         ],
       },

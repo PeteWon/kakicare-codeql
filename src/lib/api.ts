@@ -21,6 +21,7 @@ import type {
   Match,
   MfaResult,
   MfaSetupResult,
+  Paginated,
   ProfileDocuments,
   ProfileSubmission,
   ProfileSubmissionResult,
@@ -29,7 +30,10 @@ import type {
   User,
   UserRole,
   VerifyEmailResult,
+  VolunteerMatch,
   VolunteerProfile,
+  VolunteerProfileData,
+  VolunteerSession,
 } from './types';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
@@ -324,13 +328,13 @@ export const api = {
     return delay(mockSeniors.find((s) => s.id === id) ?? mockSeniors[0]); // MOCK
   },
 
-  // --- Matches (MOCK) -------------------------------------------------------
+  // --- Matches (MOCK — staff/non-volunteer facing) --------------------------
   async listMatches(): Promise<Match[]> {
     // return apiFetch<Match[]>('/api/matches');
     return delay(mockMatches); // MOCK
   },
 
-  // --- Sessions (MOCK) ------------------------------------------------------
+  // --- Sessions (MOCK — legacy stub) ----------------------------------------
   async listSessions(matchId: string): Promise<Session[]> {
     // return apiFetch<Session[]>(`/api/matches/${matchId}/sessions`);
     return delay(mockSessions.filter((s) => s.matchId === matchId)); // MOCK
@@ -340,5 +344,35 @@ export const api = {
   async listAuditLog(): Promise<AuditLogEntry[]> {
     // return apiFetch<AuditLogEntry[]>('/api/audit-log');
     return delay(mockAuditLog); // MOCK
+  },
+
+  // --- Volunteer profile (real) ----------------------------------------------
+
+  async getVolunteerProfile(): Promise<VolunteerProfileData> {
+    return apiFetch<VolunteerProfileData>('/api/volunteer/profile/');
+  },
+
+  // --- Volunteer matches (real) ----------------------------------------------
+
+  async getVolunteerMatches(): Promise<Paginated<VolunteerMatch>> {
+    return apiFetch<Paginated<VolunteerMatch>>('/api/volunteer/matches/');
+  },
+
+  async acceptMatch(id: number): Promise<VolunteerMatch> {
+    return apiFetch<VolunteerMatch>(`/api/volunteer/matches/${id}/accept/`, {
+      method: 'POST',
+    });
+  },
+
+  async declineMatch(id: number): Promise<VolunteerMatch> {
+    return apiFetch<VolunteerMatch>(`/api/volunteer/matches/${id}/decline/`, {
+      method: 'POST',
+    });
+  },
+
+  // --- Volunteer sessions (real) --------------------------------------------
+
+  async getVolunteerSessions(): Promise<Paginated<VolunteerSession>> {
+    return apiFetch<Paginated<VolunteerSession>>('/api/volunteer/sessions/');
   },
 };

@@ -2,9 +2,11 @@ import { NavLink, Outlet } from 'react-router-dom';
 
 const navItems = [
   { to: '/volunteer', label: 'Home', end: true },
-  { to: '/volunteer/visits', label: 'Visits' },
+  { to: '/volunteer/matches', label: 'Matches' },
   { to: '/volunteer/profile', label: 'Profile' },
 ];
+// 'Visits/Sessions' tab will replace or extend 'Matches' when the session
+// booking and check-in screens are built in a later sprint.
 
 /**
  * Layout for the volunteer area. Mobile-first: a bottom tab bar on small
