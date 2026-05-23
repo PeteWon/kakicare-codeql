@@ -66,3 +66,41 @@ class LoginSerializer(serializers.Serializer):
 
     def validate_email(self, value):
         return value.strip().lower()
+
+
+class MFAVerifySerializer(serializers.Serializer):
+    """Input for POST /api/auth/mfa/verify.
+
+    Exactly one of `code` (TOTP) or `backup_code` must be supplied.
+    """
+
+    code = serializers.CharField(required=False, min_length=6, max_length=8)
+    backup_code = serializers.CharField(required=False, min_length=10, max_length=10)
+
+    def validate(self, attrs):
+        if not attrs.get('code') and not attrs.get('backup_code'):
+            raise serializers.ValidationError(
+                "Provide either 'code' (TOTP) or 'backup_code'."
+            )
+        return attrs
+
+
+class PasswordResetRequestSerializer(serializers.Serializer):
+    """Input for POST /api/auth/password-reset/request."""
+
+    email = serializers.EmailField()
+
+    def validate_email(self, value):
+        return value.strip().lower()
+
+
+class PasswordResetConfirmSerializer(serializers.Serializer):
+    """Input for POST /api/auth/password-reset/confirm.
+
+    SR-AUTH-02: minimum 12 characters enforced here as a fast rejection;
+    the full AUTH_PASSWORD_VALIDATORS suite is run in the view where the
+    user object is available (enables the similarity check).
+    """
+
+    token = serializers.CharField(min_length=1)
+    new_password = serializers.CharField(write_only=True, min_length=12)

@@ -126,3 +126,28 @@ class PasswordResetToken(_HashedToken):
 
     def __str__(self):
         return f'PasswordResetToken(user={self.user_id})'
+
+
+class MFABackupCode(models.Model):
+    """Single-use recovery code for TOTP MFA.
+
+    SECURITY: only the SHA-256 hash of the raw code is stored. The raw codes
+    are returned exactly once at MFA enrolment (via mfa/setup) and never
+    persisted — a database leak cannot expose valid backup codes.
+    """
+
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name='mfa_backup_codes'
+    )
+    # SHA-256 hex digest (64 chars)
+    code_hash = models.CharField(max_length=64, db_index=True)
+    used_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['user', 'used_at']),
+        ]
+
+    def __str__(self):
+        return f'MFABackupCode(user={self.user_id}, used={self.used_at is not None})'

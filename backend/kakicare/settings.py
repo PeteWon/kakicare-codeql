@@ -154,6 +154,10 @@ REST_FRAMEWORK = {
         # The actual parse is in LoginRateThrottle.parse_rate; this entry is
         # required by DRF's get_rate() lookup and serves as documentation.
         'login': '5/15min',
+        # 10 MFA verify attempts per 15 minutes per source IP.
+        'mfa_verify': '10/15min',
+        # 5 password-reset requests per hour per source IP.
+        'password_reset': '5/hour',
     },
 }
 
@@ -240,6 +244,11 @@ EMAIL_BACKEND = env(
     default='django.core.mail.backends.console.EmailBackend',
 )
 DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='noreply@kakicare.example')
+
+
+# --- TOTP MFA ----------------------------------------------------------------
+# Issuer name shown in authenticator apps (e.g. "KakiCare:user@example.com").
+OTP_TOTP_ISSUER = 'KakiCare'
 
 
 # --- Frontend ----------------------------------------------------------------
