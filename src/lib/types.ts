@@ -22,13 +22,20 @@ export type ISODateString = string; // e.g. "2026-05-22T08:30:00Z"
 // enumeration — SR-AUTH-06).
 
 export type LoginResult =
-  | { status: 'success' } // logged in (e.g. volunteer, no MFA) — session cookie set
-  | { status: 'mfa_required' } // credentials OK, TOTP step required (e.g. staff)
+  | { status: 'success'; role: UserRole } // logged in — session cookie set
+  | { status: 'mfa_required'; mfa_enrolled: boolean } // TOTP step required
   | { status: 'invalid' }; // generic failure — never reveal the reason
 
 export type MfaResult =
-  | { status: 'success' } // TOTP verified — session cookie set
+  | { status: 'success'; role: UserRole } // verified — session cookie set
+  | { status: 'enrolled' } // new TOTP device confirmed (post-login enrolment)
   | { status: 'invalid' }; // wrong/expired code — generic failure
+
+export interface MfaSetupResult {
+  config_url: string;  // otpauth:// URI for authenticator apps
+  secret_key: string;  // base32 secret for manual entry
+  backup_codes: string[]; // raw codes — shown exactly once, never stored
+}
 
 // Result of clicking an email-verification link.
 //

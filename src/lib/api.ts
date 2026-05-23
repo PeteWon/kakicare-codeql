@@ -1,35 +1,33 @@
 // API layer for the KakiCare backend.
 //
-// MOCK-TO-REAL MIGRATION PLAN
-// ---------------------------
-// Today every function in the `api` object returns MOCK data so the frontend
-// runs before the backend exists. Each mock implementation is marked `// MOCK`,
-// and the real call is written out (commented) directly above it.
+// Auth functions talk to the real Django backend. Non-auth functions (volunteers,
+// seniors, matches, sessions, audit log) are still MOCK and will be replaced when
+// those backend endpoints are built.
 //
-// `apiFetch<T>()` below is the single shared request helper the real calls use:
-// it prefixes VITE_API_BASE_URL, sends `credentials: 'include'` so the HttpOnly
-// session cookie travels with each request, sets JSON headers, and throws
-// `ApiError` on non-2xx. (The one exception is `submitProfile`, which sends
-// multipart/form-data and therefore uses `fetch` directly — see its note.)
+// CSRF HANDLING
+// Django's CSRF middleware is bypassed by DRF's @csrf_exempt on all APIViews.
+// CSRF is re-enforced *manually* by SessionAuthentication for authenticated requests
+// only. `apiFetch` reads the `csrftoken` cookie (set by the backend on first login)
+// and forwards it as `X-CSRFToken` on every non-GET request. For unauthenticated
+// requests (register, login, verify-email) the header is ignored; for authenticated
+// ones (logout, MFA setup/verify by logged-in users) it satisfies the CSRF check.
 //
-// To go live with an endpoint:
-//   1. Uncomment the `apiFetch(...)` / `fetch(...)` call above the mock.
-//   2. Delete the `// MOCK` lines below it.
-// Function signatures and return types (from ./types) stay identical, so each
-// swap is a localised, near-one-line change. Once all are swapped, the entire
-// "MOCK data store" section can be deleted.
+// SECURITY: auth state lives entirely in the HttpOnly session cookie. No token is
+// ever stored in localStorage or sessionStorage.
 
 import type {
   AuditLogEntry,
   LoginResult,
   Match,
   MfaResult,
+  MfaSetupResult,
   ProfileDocuments,
   ProfileSubmission,
   ProfileSubmissionResult,
   Senior,
   Session,
   User,
+  UserRole,
   VerifyEmailResult,
   VolunteerProfile,
 } from './types';
@@ -48,25 +46,39 @@ export class ApiError extends Error {
 }
 
 interface ApiFetchOptions extends Omit<RequestInit, 'body'> {
-  /** JSON-serialisable request body. */
   body?: unknown;
+}
+
+/** Read the CSRF token Django sets in the `csrftoken` cookie (not HttpOnly). */
+function getCsrfToken(): string {
+  const match = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]*)/);
+  return match ? decodeURIComponent(match[1]) : '';
 }
 
 /**
  * Core fetch wrapper. Prefixes the base URL, sends/parses JSON, sends cookies
- * (credentials: 'include') so the backend can use httpOnly session cookies,
- * and throws `ApiError` on non-2xx responses.
+ * (`credentials: 'include'`) so the backend session cookie travels with each
+ * request, injects `X-CSRFToken` on state-changing requests, and throws
+ * `ApiError` on non-2xx responses.
  */
 export async function apiFetch<T>(
   path: string,
   options: ApiFetchOptions = {},
 ): Promise<T> {
   const { body, headers, ...rest } = options;
+  const method = (rest.method ?? 'GET').toUpperCase();
+
+  // Include CSRF token on all state-changing requests.
+  const csrfHeaders: Record<string, string> =
+    method !== 'GET' && method !== 'HEAD'
+      ? { 'X-CSRFToken': getCsrfToken() }
+      : {};
 
   const response = await fetch(`${BASE_URL}${path}`, {
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
+      ...csrfHeaders,
       ...headers,
     },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -79,7 +91,7 @@ export async function apiFetch<T>(
   if (!response.ok) {
     throw new ApiError(
       response.status,
-      (data && (data.message as string)) || response.statusText,
+      (data && (data.detail as string)) || response.statusText,
       data,
     );
   }
@@ -88,25 +100,12 @@ export async function apiFetch<T>(
 }
 
 // ---------------------------------------------------------------------------
-// MOCK data store
+// MOCK data store (non-auth — remove as backend endpoints are built)
 // ---------------------------------------------------------------------------
-// Everything in this section is temporary scaffolding. Delete once the backend
-// is wired up.
 
-// MOCK: simulate network latency.
 function delay<T>(value: T, ms = 300): Promise<T> {
   return new Promise((resolve) => setTimeout(() => resolve(value), ms));
 }
-
-// MOCK: in-memory sample records.
-const mockUser: User = {
-  id: 'usr_1',
-  email: 'volunteer@example.com',
-  fullName: 'Aisha Rahman',
-  role: 'volunteer',
-  emailVerifiedAt: '2026-05-01T09:00:00Z',
-  createdAt: '2026-04-20T09:00:00Z',
-};
 
 const mockVolunteers: VolunteerProfile[] = [
   {
@@ -176,79 +175,113 @@ const mockAuditLog: AuditLogEntry[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Backend response shape for /api/auth/me (snake_case, Django conventions)
+// ---------------------------------------------------------------------------
+
+interface MeResponse {
+  id: number | string;
+  email: string;
+  full_name: string;
+  role: UserRole;
+  is_email_verified: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // API surface
 // ---------------------------------------------------------------------------
-// Each function shows the real call (commented) and the mock it currently uses.
 
 export const api = {
-  // --- Authentication -----------------------------------------------------
-  // On a real 'success'/'mfa_required', the backend sets a secure, HttpOnly
-  // session cookie. The frontend NEVER receives or stores a token — it only
-  // reads the status. Do not return tokens from these functions.
-  //
-  // SECURITY: the MFA gate is enforced server-side. A staff account can never
-  // reach 'success' from `login` alone — the backend issues a fully-privileged
-  // session only after `verifyMfa` succeeds. The two-step UI below is a
-  // convenience, not the security boundary.
-  async login(_email: string, _password: string): Promise<LoginResult> {
-    // return apiFetch<LoginResult>('/api/auth/login', {
-    //   method: 'POST',
-    //   body: { email: _email, password: _password },
-    // });
+  // --- Authentication -------------------------------------------------------
 
-    // MOCK: outcome is driven by the email so we can exercise every UI state.
-    // The password is never inspected here and is never logged or persisted.
-    const normalized = _email.trim().toLowerCase();
-    if (normalized.startsWith('staff')) return delay({ status: 'mfa_required' }); // MOCK
-    if (normalized.startsWith('volunteer')) return delay({ status: 'success' }); // MOCK
-    return delay({ status: 'invalid' }); // MOCK — generic failure for anything else
+  async register(email: string, fullName: string, password: string): Promise<void> {
+    // Backend always returns 200 with a generic message (anti-enumeration);
+    // 400 is thrown as ApiError with field-level errors in .body.
+    await apiFetch('/api/auth/register', {
+      method: 'POST',
+      body: { email, full_name: fullName, password },
+    });
   },
 
-  async verifyMfa(_code: string): Promise<MfaResult> {
-    // return apiFetch<MfaResult>('/api/auth/mfa', {
-    //   method: 'POST',
-    //   body: { code: _code },
-    // });
-
-    // MOCK: accept the well-known code "123456", reject everything else.
-    return delay(_code === '123456' ? { status: 'success' } : { status: 'invalid' }); // MOCK
+  async verifyEmail(token: string): Promise<VerifyEmailResult> {
+    try {
+      await apiFetch('/api/auth/verify-email', {
+        method: 'POST',
+        body: { token },
+      });
+      return { status: 'success' };
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 400) {
+        return { status: 'invalid' };
+      }
+      throw err;
+    }
   },
 
-  // Verify an email-verification token from a /verify-email?token=... link.
-  //
-  // SECURITY: the token is single-use and time-limited — that is enforced by
-  // the BACKEND, not here. The frontend only forwards the token (over HTTPS)
-  // and reflects the result. The token must never be logged or persisted to
-  // localStorage/sessionStorage. The failure outcome is generic regardless of
-  // whether the token is invalid, already used, or expired.
-  async verifyEmail(_token: string): Promise<VerifyEmailResult> {
-    // return apiFetch<VerifyEmailResult>('/api/auth/verify-email', {
-    //   method: 'POST',
-    //   body: { token: _token },
-    // });
-
-    // MOCK: any token succeeds except the literal "expired".
-    return delay(_token === 'expired' ? { status: 'invalid' } : { status: 'success' }); // MOCK
+  async login(email: string, password: string): Promise<LoginResult> {
+    // Backend always returns 200 (anti-enumeration). Status field drives the UI.
+    return apiFetch<LoginResult>('/api/auth/login', {
+      method: 'POST',
+      body: { email, password },
+    });
   },
 
-  // --- Session / current user --------------------------------------------
+  async verifyMfa(
+    payload: { code: string } | { backup_code: string },
+  ): Promise<MfaResult> {
+    try {
+      return await apiFetch<MfaResult>('/api/auth/mfa/verify', {
+        method: 'POST',
+        body: payload,
+      });
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 400) {
+        return { status: 'invalid' };
+      }
+      throw err;
+    }
+  },
+
+  async setupMfa(): Promise<MfaSetupResult> {
+    return apiFetch<MfaSetupResult>('/api/auth/mfa/setup', { method: 'POST' });
+  },
+
+  async logout(): Promise<void> {
+    await apiFetch('/api/auth/logout', { method: 'POST' });
+  },
+
   async getCurrentUser(): Promise<User> {
-    // return apiFetch<User>('/api/auth/me');
-    return delay(mockUser); // MOCK
+    const raw = await apiFetch<MeResponse>('/api/auth/me');
+    return {
+      id: String(raw.id),
+      email: raw.email,
+      fullName: raw.full_name,
+      role: raw.role,
+      // Backend returns is_email_verified (bool), not a timestamp.
+      // emailVerifiedAt and createdAt are not yet exposed by /api/auth/me.
+      emailVerifiedAt: raw.is_email_verified ? 'verified' : null,
+      createdAt: '',
+    };
   },
 
-  // --- Volunteer profile completion --------------------------------------
-  // Submit the profile + identity/declaration documents for staff vetting.
-  //
-  // SECURITY: file-type/size checks done on the client (in FileUpload) are
-  // USABILITY ONLY and trivially bypassable. The BACKEND must independently
-  // validate the real content type by inspecting magic bytes (NOT the
-  // extension or client-sent MIME type), enforce the size limit, store files
-  // OUTSIDE the web root, and serve them only via an authenticated, authorised
-  // endpoint (abuse case AC-10; SR-DATA-03, SR-DATA-04). The real request sends
-  // multipart/form-data (FormData), NOT JSON, so it bypasses the JSON apiFetch
-  // wrapper and uses fetch directly — letting the browser set the multipart
-  // boundary itself.
+  async requestPasswordReset(email: string): Promise<void> {
+    // Backend always returns 200 with a generic message (anti-enumeration).
+    await apiFetch('/api/auth/password-reset/request', {
+      method: 'POST',
+      body: { email },
+    });
+  },
+
+  async confirmPasswordReset(token: string, newPassword: string): Promise<void> {
+    await apiFetch('/api/auth/password-reset/confirm', {
+      method: 'POST',
+      body: { token, new_password: newPassword },
+    });
+  },
+
+  // --- Volunteer profile completion -----------------------------------------
+  // SECURITY: file-type/size checks in FileUpload are USABILITY ONLY — the
+  // backend must independently validate content type, enforce size limits, and
+  // store files outside the web root (SR-DATA-03/04).
   async submitProfile(
     data: ProfileSubmission,
     files: ProfileDocuments,
@@ -260,17 +293,16 @@ export const api = {
     // const res = await fetch(`${BASE_URL}/api/volunteer/profile`, {
     //   method: 'POST',
     //   credentials: 'include',
+    //   headers: { 'X-CSRFToken': getCsrfToken() },
     //   body: form,
     // });
     // return (await res.json()) as ProfileSubmissionResult;
-
-    // MOCK: accept anything and report the application as pending review.
     void data;
     void files;
     return delay({ status: 'success' }); // MOCK
   },
 
-  // --- Volunteers ---------------------------------------------------------
+  // --- Volunteers (MOCK) ---------------------------------------------------
   async listVolunteers(): Promise<VolunteerProfile[]> {
     // return apiFetch<VolunteerProfile[]>('/api/volunteers');
     return delay(mockVolunteers); // MOCK
@@ -281,7 +313,7 @@ export const api = {
     return delay(mockVolunteers.find((v) => v.id === id) ?? mockVolunteers[0]); // MOCK
   },
 
-  // --- Seniors (staff-managed) -------------------------------------------
+  // --- Seniors (MOCK) -------------------------------------------------------
   async listSeniors(): Promise<Senior[]> {
     // return apiFetch<Senior[]>('/api/seniors');
     return delay(mockSeniors); // MOCK
@@ -292,19 +324,19 @@ export const api = {
     return delay(mockSeniors.find((s) => s.id === id) ?? mockSeniors[0]); // MOCK
   },
 
-  // --- Matches ------------------------------------------------------------
+  // --- Matches (MOCK) -------------------------------------------------------
   async listMatches(): Promise<Match[]> {
     // return apiFetch<Match[]>('/api/matches');
     return delay(mockMatches); // MOCK
   },
 
-  // --- Sessions -----------------------------------------------------------
+  // --- Sessions (MOCK) ------------------------------------------------------
   async listSessions(matchId: string): Promise<Session[]> {
     // return apiFetch<Session[]>(`/api/matches/${matchId}/sessions`);
     return delay(mockSessions.filter((s) => s.matchId === matchId)); // MOCK
   },
 
-  // --- Audit log (staff only) --------------------------------------------
+  // --- Audit log (MOCK) -----------------------------------------------------
   async listAuditLog(): Promise<AuditLogEntry[]> {
     // return apiFetch<AuditLogEntry[]>('/api/audit-log');
     return delay(mockAuditLog); // MOCK

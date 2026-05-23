@@ -2,53 +2,64 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button, Card, TextField } from '@/components';
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
+import { homePathForRole } from '@/lib/auth';
+import type { MfaSetupResult, UserRole } from '@/lib/types';
 import { email as emailRule, required, validate } from '@/lib/validation';
 
-// SECURITY NOTES (KakiCare login — see security report):
+// SECURITY NOTES (KakiCare login):
 //
-// - Generic failure messages only. A failed login always shows the SAME
-//   message ("Invalid email or password") whether the email is unknown, the
-//   password is wrong, or the account is inactive. This prevents account
-//   enumeration (SR-AUTH-06). The backend enforces this; the frontend must
-//   never branch its message on the failure reason.
+// - Generic failure message only. A failed login ALWAYS shows "Invalid email or
+//   password" regardless of whether the email is unknown, password wrong, or
+//   account inactive. This prevents account enumeration (SR-AUTH-06). The
+//   backend enforces this; the frontend must not branch on the failure reason.
 //
-// - The password lives ONLY in in-memory React state below. It is never
-//   logged, never written to localStorage/sessionStorage, and is dropped when
-//   the component unmounts.
+// - Password lives ONLY in in-memory React state. Never logged, never written to
+//   localStorage/sessionStorage, dropped on unmount.
 //
-// - Session handling is done by the backend via secure, HttpOnly cookies.
-//   The frontend must NOT store any auth token in localStorage or
-//   sessionStorage — those are readable by JavaScript and vulnerable to XSS.
-//   Do not introduce token-in-localStorage here.
+// - Session lives in the backend's HttpOnly cookie. The frontend never receives
+//   or stores a token — it only reads the status field from the response.
 //
-// - MFA is enforced server-side. For a staff account, the backend will not
-//   issue a privileged session on credentials alone — login returns
-//   'mfa_required' and only verifyMfa completes the login. The two-step UI
-//   here is a usability convenience, not the security gate.
+// - MFA is enforced server-side. For staff, the backend issues a full session
+//   only after verifyMfa succeeds. The two-step UI is a usability convenience,
+//   not the security gate.
 
 const GENERIC_LOGIN_ERROR = 'Invalid email or password.';
 const GENERIC_MFA_ERROR = 'Invalid code. Please try again.';
 
-type Step = 'credentials' | 'mfa';
+// credentials  → email + password form (initial)
+// mfa          → TOTP/backup-code entry for enrolled users
+// mfa_setup    → first-time MFA enrolment (staff on first login)
+type Step = 'credentials' | 'mfa' | 'mfa_setup';
 
 export function Login() {
   const navigate = useNavigate();
   const [step, setStep] = useState<Step>('credentials');
 
-  // Credentials step state.
+  // credentials step
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [emailError, setEmailError] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
 
-  // MFA step state.
+  // mfa step — current enrolled user
+  const [mfaRole, setMfaRole] = useState<UserRole>('staff');
   const [code, setCode] = useState('');
+  const [backupMode, setBackupMode] = useState(false);
   const [codeError, setCodeError] = useState<string | null>(null);
 
-  // Shared.
+  // mfa_setup step — first-time MFA enrolment
+  const [setupData, setSetupData] = useState<MfaSetupResult | null>(null);
+  const [setupLoading, setSetupLoading] = useState(false);
+  const [setupCode, setSetupCode] = useState('');
+  const [setupCodeError, setSetupCodeError] = useState<string | null>(null);
+  const [backupsAcknowledged, setBackupsAcknowledged] = useState(false);
+
+  // shared
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // ── Credentials step ────────────────────────────────────────────────────
 
   async function handleCredentials(e: FormEvent) {
     e.preventDefault();
@@ -65,13 +76,22 @@ export function Login() {
       const result = await api.login(email, password);
       switch (result.status) {
         case 'success':
-          navigate('/volunteer');
+          navigate(homePathForRole(result.role));
           return;
         case 'mfa_required':
-          setStep('mfa');
+          if (result.mfa_enrolled) {
+            // User already has a confirmed TOTP device — go to verify step.
+            // Role is not in this response; staff always require MFA so assume
+            // staff. Volunteers with MFA opted in are also possible.
+            setMfaRole('staff');
+            setStep('mfa');
+          } else {
+            // First login (staff) — must set up MFA before completing login.
+            setStep('mfa_setup');
+            void triggerMfaSetup();
+          }
           return;
         case 'invalid':
-          // Generic message only — never reveal which part failed.
           setFormError(GENERIC_LOGIN_ERROR);
           return;
       }
@@ -82,23 +102,44 @@ export function Login() {
     }
   }
 
+  // ── MFA verify step (existing enrolled device) ──────────────────────────
+
+  function resetMfaStep() {
+    setCode('');
+    setCodeError(null);
+    setFormError(null);
+    setBackupMode(false);
+  }
+
   async function handleMfa(e: FormEvent) {
     e.preventDefault();
     setFormError(null);
 
-    const codeErr = validate(code, [required('Code')]);
-    setCodeError(codeErr);
-    if (codeErr) return;
-    if (code.length !== 6) {
-      setCodeError('Enter the 6-digit code from your authenticator app.');
-      return;
+    const trimmed = code.trim();
+
+    if (backupMode) {
+      if (trimmed.length !== 10) {
+        setCodeError('Backup codes are exactly 10 characters.');
+        return;
+      }
+    } else {
+      const codeErr = validate(trimmed, [required('Code')]);
+      setCodeError(codeErr);
+      if (codeErr) return;
+      if (trimmed.length < 6 || trimmed.length > 8) {
+        setCodeError('Enter the 6-digit code from your authenticator app.');
+        return;
+      }
     }
 
     setSubmitting(true);
     try {
-      const result = await api.verifyMfa(code);
+      const payload = backupMode
+        ? { backup_code: trimmed }
+        : { code: trimmed };
+      const result = await api.verifyMfa(payload);
       if (result.status === 'success') {
-        navigate('/staff');
+        navigate(homePathForRole(result.role));
         return;
       }
       setFormError(GENERIC_MFA_ERROR);
@@ -109,125 +150,324 @@ export function Login() {
     }
   }
 
-  return (
-    <section className="mx-auto max-w-md py-8">
-      {step === 'credentials' ? (
-        <>
-          <h1 className="text-3xl font-semibold text-primary-900">Log in</h1>
-          <p className="mt-2 text-primary-600">
-            Welcome back to KakiCare.
-          </p>
+  // ── MFA setup step (first-time enrolment) ───────────────────────────────
 
-          <Card className="mt-6">
-            <form className="space-y-4" onSubmit={handleCredentials} noValidate>
-              {formError ? (
-                <div
-                  role="alert"
-                  className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
-                >
-                  {formError}
-                </div>
-              ) : null}
+  async function triggerMfaSetup() {
+    setSetupLoading(true);
+    setFormError(null);
+    try {
+      const data = await api.setupMfa();
+      setSetupData(data);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        // Session expired during setup — start over.
+        setStep('credentials');
+        setFormError('Your session expired. Please sign in again.');
+      } else {
+        setFormError('Could not start MFA setup. Please try again.');
+      }
+    } finally {
+      setSetupLoading(false);
+    }
+  }
 
-              <TextField
-                label="Email"
-                type="email"
-                name="email"
-                autoComplete="email"
-                autoFocus
-                value={email}
-                error={emailError}
-                onChange={(e) => setEmail(e.target.value)}
+  async function handleMfaSetup(e: FormEvent) {
+    e.preventDefault();
+    setFormError(null);
+
+    const trimmed = setupCode.trim();
+    if (trimmed.length < 6 || trimmed.length > 8) {
+      setSetupCodeError('Enter the 6-digit code from your authenticator app.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const result = await api.verifyMfa({ code: trimmed });
+      if (result.status === 'success') {
+        navigate(homePathForRole(result.role));
+        return;
+      }
+      setSetupCodeError(GENERIC_MFA_ERROR);
+    } catch {
+      setFormError('Something went wrong. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  // ── Render ───────────────────────────────────────────────────────────────
+
+  if (step === 'mfa_setup') {
+    return (
+      <section className="mx-auto max-w-md py-8">
+        <h1 className="text-3xl font-semibold text-primary-900">
+          Set up two-factor authentication
+        </h1>
+        <p className="mt-2 text-primary-600">
+          Your account requires MFA. Add the key below to your authenticator app
+          (Google Authenticator, Aegis, etc.), save your backup codes, then enter
+          the 6-digit code to complete sign-in.
+        </p>
+
+        <Card className="mt-6 space-y-5">
+          {formError ? (
+            <div
+              role="alert"
+              className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+            >
+              {formError}
+            </div>
+          ) : null}
+
+          {setupLoading || !setupData ? (
+            <div className="flex items-center justify-center py-6">
+              <span
+                role="status"
+                aria-label="Loading setup…"
+                className="h-8 w-8 animate-spin rounded-full border-4 border-primary-100 border-t-primary-500"
               />
-
-              <TextField
-                label="Password"
-                type="password"
-                name="password"
-                autoComplete="current-password"
-                value={password}
-                error={passwordError}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-
-              <div className="text-right">
-                <Link
-                  to="/forgot-password"
-                  className="text-sm text-primary-600 hover:text-primary-800"
-                >
-                  Forgot password?
-                </Link>
+            </div>
+          ) : (
+            <>
+              <div>
+                <p className="text-sm font-medium text-primary-800">
+                  Secret key (enter manually in your app)
+                </p>
+                <p className="mt-1 break-all rounded-xl bg-cream-100 px-3 py-2 font-mono text-sm text-primary-900">
+                  {setupData.secret_key}
+                </p>
+                <p className="mt-1 text-xs text-primary-500">
+                  Issuer: KakiCare
+                </p>
               </div>
 
-              <Button type="submit" fullWidth disabled={submitting}>
-                {submitting ? 'Signing in…' : 'Sign in'}
-              </Button>
-            </form>
-          </Card>
+              <div>
+                <p className="text-sm font-medium text-primary-800">
+                  Backup codes{' '}
+                  <span className="font-normal text-red-600">(save these now — shown once only)</span>
+                </p>
+                <ul className="mt-2 grid grid-cols-2 gap-1">
+                  {setupData.backup_codes.map((c) => (
+                    <li
+                      key={c}
+                      className="rounded-lg bg-cream-100 px-2 py-1 font-mono text-sm text-primary-900"
+                    >
+                      {c}
+                    </li>
+                  ))}
+                </ul>
+                <label className="mt-3 flex items-center gap-2 text-sm text-primary-700">
+                  <input
+                    type="checkbox"
+                    checked={backupsAcknowledged}
+                    onChange={(e) => setBackupsAcknowledged(e.target.checked)}
+                    className="rounded border-cream-300"
+                  />
+                  I've saved my backup codes
+                </label>
+              </div>
 
-          <p className="mt-6 text-center text-sm text-primary-600">
-            New volunteer?{' '}
-            <Link to="/register" className="font-medium text-primary-700 hover:text-primary-900">
-              Create an account
-            </Link>
-          </p>
-        </>
-      ) : (
-        <>
-          <h1 className="text-3xl font-semibold text-primary-900">
-            Two-factor authentication
-          </h1>
-          <p className="mt-2 text-primary-600">
-            Enter the 6-digit code from your authenticator app.
-          </p>
+              <form className="space-y-4" onSubmit={handleMfaSetup} noValidate>
+                <TextField
+                  label="Authentication code"
+                  name="setupCode"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  autoFocus
+                  maxLength={8}
+                  placeholder="123456"
+                  value={setupCode}
+                  error={setupCodeError}
+                  hint="Enter the 6-digit code from your authenticator app."
+                  onChange={(e) => {
+                    setSetupCode(e.target.value.replace(/\D/g, '').slice(0, 8));
+                    setSetupCodeError(null);
+                  }}
+                />
 
-          <Card className="mt-6">
-            <form className="space-y-4" onSubmit={handleMfa} noValidate>
-              {formError ? (
-                <div
-                  role="alert"
-                  className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+                <Button
+                  type="submit"
+                  fullWidth
+                  disabled={submitting || !backupsAcknowledged}
                 >
-                  {formError}
-                </div>
-              ) : null}
+                  {submitting ? 'Verifying…' : 'Verify and sign in'}
+                </Button>
 
+                <Button
+                  type="button"
+                  variant="ghost"
+                  fullWidth
+                  disabled={submitting}
+                  onClick={() => {
+                    setStep('credentials');
+                    setSetupData(null);
+                    setSetupCode('');
+                    setSetupCodeError(null);
+                    setFormError(null);
+                    setBackupsAcknowledged(false);
+                  }}
+                >
+                  Back
+                </Button>
+              </form>
+            </>
+          )}
+        </Card>
+      </section>
+    );
+  }
+
+  if (step === 'mfa') {
+    void mfaRole; // role captured for potential future use (e.g. showing volunteer vs staff label)
+    return (
+      <section className="mx-auto max-w-md py-8">
+        <h1 className="text-3xl font-semibold text-primary-900">
+          Two-factor authentication
+        </h1>
+        <p className="mt-2 text-primary-600">
+          {backupMode
+            ? 'Enter one of your 10-character backup codes.'
+            : 'Enter the 6-digit code from your authenticator app.'}
+        </p>
+
+        <Card className="mt-6">
+          <form className="space-y-4" onSubmit={handleMfa} noValidate>
+            {formError ? (
+              <div
+                role="alert"
+                className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+              >
+                {formError}
+              </div>
+            ) : null}
+
+            {backupMode ? (
+              <TextField
+                label="Backup code"
+                name="backupCode"
+                autoComplete="off"
+                autoFocus
+                maxLength={10}
+                placeholder="e.g. a1b2c3d4e5"
+                value={code}
+                error={codeError}
+                onChange={(e) => {
+                  setCode(e.target.value.slice(0, 10));
+                  setCodeError(null);
+                }}
+              />
+            ) : (
               <TextField
                 label="Authentication code"
                 name="otp"
                 inputMode="numeric"
                 autoComplete="one-time-code"
                 autoFocus
-                maxLength={6}
+                maxLength={8}
                 placeholder="123456"
                 value={code}
                 error={codeError}
-                // Strip non-digits and cap at 6 characters.
-                onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              />
-
-              <Button type="submit" fullWidth disabled={submitting}>
-                {submitting ? 'Verifying…' : 'Verify'}
-              </Button>
-
-              <Button
-                type="button"
-                variant="ghost"
-                fullWidth
-                disabled={submitting}
-                onClick={() => {
-                  setStep('credentials');
-                  setCode('');
+                onChange={(e) => {
+                  setCode(e.target.value.replace(/\D/g, '').slice(0, 8));
                   setCodeError(null);
-                  setFormError(null);
                 }}
-              >
-                Back
-              </Button>
-            </form>
-          </Card>
-        </>
-      )}
+              />
+            )}
+
+            <button
+              type="button"
+              className="text-sm text-primary-600 hover:text-primary-800"
+              onClick={() => {
+                setBackupMode((m) => !m);
+                setCode('');
+                setCodeError(null);
+                setFormError(null);
+              }}
+            >
+              {backupMode ? 'Use authenticator app instead' : 'Use a backup code instead'}
+            </button>
+
+            <Button type="submit" fullWidth disabled={submitting}>
+              {submitting ? 'Verifying…' : 'Verify'}
+            </Button>
+
+            <Button
+              type="button"
+              variant="ghost"
+              fullWidth
+              disabled={submitting}
+              onClick={() => {
+                setStep('credentials');
+                resetMfaStep();
+              }}
+            >
+              Back
+            </Button>
+          </form>
+        </Card>
+      </section>
+    );
+  }
+
+  return (
+    <section className="mx-auto max-w-md py-8">
+      <h1 className="text-3xl font-semibold text-primary-900">Sign in</h1>
+      <p className="mt-2 text-primary-600">Welcome back to KakiCare.</p>
+
+      <Card className="mt-6">
+        <form className="space-y-4" onSubmit={handleCredentials} noValidate>
+          {formError ? (
+            <div
+              role="alert"
+              className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+            >
+              {formError}
+            </div>
+          ) : null}
+
+          <TextField
+            label="Email"
+            type="email"
+            name="email"
+            autoComplete="email"
+            autoFocus
+            value={email}
+            error={emailError}
+            onChange={(e) => setEmail(e.target.value)}
+          />
+
+          <TextField
+            label="Password"
+            type="password"
+            name="password"
+            autoComplete="current-password"
+            value={password}
+            error={passwordError}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+
+          <div className="text-right">
+            <Link
+              to="/forgot-password"
+              className="text-sm text-primary-600 hover:text-primary-800"
+            >
+              Forgot password?
+            </Link>
+          </div>
+
+          <Button type="submit" fullWidth disabled={submitting}>
+            {submitting ? 'Signing in…' : 'Sign in'}
+          </Button>
+        </form>
+      </Card>
+
+      <p className="mt-6 text-center text-sm text-primary-600">
+        New volunteer?{' '}
+        <Link to="/register" className="font-medium text-primary-700 hover:text-primary-900">
+          Create an account
+        </Link>
+      </p>
     </section>
   );
 }

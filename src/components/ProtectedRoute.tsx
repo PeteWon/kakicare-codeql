@@ -1,32 +1,41 @@
+import { useEffect, useState } from 'react';
 import { Navigate, Outlet } from 'react-router-dom';
-import { getCurrentUser } from '@/lib/auth';
-import type { UserRole } from '@/lib/types';
+import { fetchCurrentUser } from '@/lib/auth';
+import type { User, UserRole } from '@/lib/types';
 
 // Guards a route group by required role.
 //
 // SECURITY NOTE: client-side route protection is a UX CONVENIENCE ONLY. It
 // keeps honest users from landing on pages meant for another role, but it is
-// NOT a security control — anyone can bypass it (edit the bundle, hit the API
-// directly, etc.). Every protected API endpoint MUST independently enforce
-// authentication and authorisation on the backend. Hiding a page here does not
-// protect the data behind it.
+// NOT a security control — anyone can bypass it. Every protected API endpoint
+// MUST independently enforce authentication and authorisation on the backend.
 
 interface ProtectedRouteProps {
   role: UserRole;
 }
 
-export function ProtectedRoute({ role }: ProtectedRouteProps) {
-  // MOCK: reads a hardcoded user from auth.ts. Will become an async check
-  // against GET /api/auth/me once the backend exists (and gain a loading state).
-  const user = getCurrentUser();
+type AuthState = 'loading' | User | null;
 
-  if (!user) {
-    // Not logged in → send to login.
-    return <Navigate to="/login" replace />;
+export function ProtectedRoute({ role }: ProtectedRouteProps) {
+  const [authState, setAuthState] = useState<AuthState>('loading');
+
+  useEffect(() => {
+    fetchCurrentUser().then((user) => setAuthState(user));
+  }, []);
+
+  if (authState === 'loading') {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-cream">
+        <span
+          role="status"
+          aria-label="Checking authentication…"
+          className="h-10 w-10 animate-spin rounded-full border-4 border-primary-100 border-t-primary-500"
+        />
+      </div>
+    );
   }
 
-  if (user.role !== role) {
-    // Logged in but wrong role for this area.
+  if (!authState || authState.role !== role) {
     return <Navigate to="/login" replace />;
   }
 
