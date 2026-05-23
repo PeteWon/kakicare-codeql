@@ -52,3 +52,17 @@ class VerifyEmailSerializer(serializers.Serializer):
     """Input validation for POST /api/auth/verify-email."""
 
     token = serializers.CharField(min_length=1)
+
+
+class LoginSerializer(serializers.Serializer):
+    """Input validation for POST /api/auth/login.
+
+    SR-INPUT-01: authoritative validation. No password-policy checks here —
+    login must accept any string so the hash comparison always runs.
+    """
+
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True)
+
+    def validate_email(self, value):
+        return value.strip().lower()

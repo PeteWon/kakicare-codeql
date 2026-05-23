@@ -3,7 +3,8 @@
 #
 # Direct dependencies:
 #   Django                 web framework
-#   djangorestframework    REST API layer (no endpoints yet)
+#   djangorestframework    REST API layer
+#   django-cors-headers    CORS for the React SPA (different port in dev)
 #   argon2-cffi            Argon2id password hashing (default hasher)
 #   django-otp             TOTP MFA support (installed; no MFA logic yet)
 #   django-environ         load settings/secrets from environment / .env
@@ -11,6 +12,7 @@
 
 Django==5.2.14
 djangorestframework==3.17.1
+django-cors-headers==4.9.0
 argon2-cffi==25.1.0
 django-otp==1.7.0
 django-environ==0.13.0

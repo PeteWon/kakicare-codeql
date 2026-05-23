@@ -4,36 +4,176 @@ import secrets
 from datetime import timedelta
 
 from django.conf import settings
+from django.contrib import auth
+from django.contrib.auth.hashers import check_password, make_password
 from django.core.mail import send_mail
 from django.db import transaction
+from django.middleware.csrf import get_token
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import SimpleRateThrottle
 from rest_framework.views import APIView
 
 from .models import EmailVerificationToken, User
-from .serializers import RegisterSerializer, VerifyEmailSerializer
+from .serializers import LoginSerializer, RegisterSerializer, VerifyEmailSerializer
 
 logger = logging.getLogger(__name__)
 
 _TOKEN_EXPIRY_HOURS = 24
-# SR-AUTH-06: single generic message used for every verification failure so
-# callers cannot distinguish invalid / expired / already-used tokens.
 _GENERIC_VERIFY_ERROR = 'Invalid or expired verification link.'
+_GENERIC_LOGIN_ERROR = 'Invalid email or password.'
+
+# SR-AUTH-06 (timing equalizer): computed once at startup so the hash is
+# available without re-deriving it per request. When an email is not found we
+# still call check_password against this value so the Argon2id work happens
+# regardless — prevents email-existence probing via response-time differences.
+_DUMMY_PASSWORD_HASH = make_password('unused-dummy-timing-value')
 
 
 def _hash_token(raw_token: str) -> str:
-    # SR-DATA: only this hash is stored or queried. The raw token leaves the
-    # system only via the verification email and is never logged or persisted.
+    # SR-DATA: only the hash is stored/queried; the raw token is never persisted.
     return hashlib.sha256(raw_token.encode('utf-8')).hexdigest()
 
 
-class RegisterView(APIView):
-    """POST /api/auth/register
+# ---------------------------------------------------------------------------
+# Throttle
+# ---------------------------------------------------------------------------
 
-    Creates a volunteer account and emails a verification link.
+class LoginRateThrottle(SimpleRateThrottle):
+    """SR-AUTH-04: 5 login attempts per 15-minute window, keyed by source IP.
+
+    Keying by IP (not by account email) means an attacker cannot lock out a
+    legitimate user by submitting that user's email in repeated bad requests.
     """
+
+    scope = 'login'
+
+    def parse_rate(self, rate):
+        # Return (num_requests, duration_seconds) directly; the rate string in
+        # DEFAULT_THROTTLE_RATES is ignored — it exists only as documentation.
+        return (5, 15 * 60)
+
+    def get_cache_key(self, request, view):
+        ident = self.get_ident(request)
+        return self.cache_format % {'scope': self.scope, 'ident': ident}
+
+
+# ---------------------------------------------------------------------------
+# Login / logout / me
+# ---------------------------------------------------------------------------
+
+class LoginView(APIView):
+    """POST /api/auth/login
+
+    All outcomes (invalid email, wrong password, unverified, inactive, staff-
+    needing-MFA) that are not a full volunteer session use a deliberate generic
+    shape so callers cannot enumerate account state. The HTTP status is always
+    200 — the frontend checks the `status` field in the body.
+    """
+
+    permission_classes = [AllowAny]
+    throttle_classes = [LoginRateThrottle]
+
+    def post(self, request):
+        # Stamp the CSRF cookie on this response so the frontend can read it
+        # and include X-CSRFToken on subsequent state-changing requests.
+        # SR-SESS-01: the session cookie is HttpOnly (JS cannot read it); the
+        # CSRF cookie is intentionally readable (HttpOnly=False, Django default)
+        # so the SPA can extract and forward it as the X-CSRFToken header.
+        get_token(request)
+
+        serializer = LoginSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({'status': 'invalid'}, status=status.HTTP_200_OK)
+
+        email = serializer.validated_data['email']
+        password = serializer.validated_data['password']
+
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            # SR-AUTH-06 (timing equalizer): run a full Argon2id check against
+            # the dummy hash so the wall-clock time matches a real wrong-password
+            # attempt. Without this, a fast "email not found" response would
+            # leak that the address is not registered.
+            check_password(password, _DUMMY_PASSWORD_HASH)
+            return Response({'status': 'invalid'}, status=status.HTTP_200_OK)
+
+        # Verify the Argon2id hash (SR-AUTH-01).
+        if not user.check_password(password):
+            return Response({'status': 'invalid'}, status=status.HTTP_200_OK)
+
+        # SR-AUTH-06: inactive and unverified accounts return the same generic
+        # error as wrong-password — no information about account state is leaked.
+        if not user.is_active or not user.is_email_verified:
+            return Response({'status': 'invalid'}, status=status.HTTP_200_OK)
+
+        if user.role == User.Role.STAFF:
+            # SR-AUTH-03: credentials are verified but a full session is NOT
+            # established. The user pk is stored in a short-lived session so
+            # the TOTP endpoint (POST /api/auth/mfa — built in the next prompt)
+            # can retrieve it and call auth.login() after code verification.
+            request.session.flush()  # clear any stale session before writing
+            request.session['mfa_pending_user_id'] = user.pk
+            request.session.set_expiry(5 * 60)  # 5-min window to complete MFA
+            return Response({'status': 'mfa_required'}, status=status.HTTP_200_OK)
+
+        # Volunteer: establish a full authenticated session.
+        # SR-SESS-01: Django's login() stores the session ID in an HttpOnly
+        # cookie — the token never appears in the JSON body, preventing
+        # token-in-localStorage patterns that expose credentials to XSS.
+        auth.login(request, user)
+        # SR-AUTH-05: 8-hour session lifetime for volunteers.
+        request.session.set_expiry(8 * 3600)
+
+        return Response(
+            {'status': 'success', 'role': user.role},
+            status=status.HTTP_200_OK,
+        )
+
+
+class LogoutView(APIView):
+    """POST /api/auth/logout — destroys the server-side session."""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        auth.logout(request)  # flushes the session and clears the cookie
+        return Response({'detail': 'Logged out.'}, status=status.HTTP_200_OK)
+
+
+class MeView(APIView):
+    """GET /api/auth/me — returns the authenticated user's safe profile.
+
+    Used by the frontend's ProtectedRoute to determine the current user.
+    Returns 401 when not authenticated (DRF IsAuthenticated default).
+
+    NOTE: field names here are snake_case (Django convention). When the
+    frontend wires this up it will need to map full_name → fullName and
+    is_email_verified → emailVerifiedAt per the TypeScript User interface.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        u = request.user
+        return Response({
+            'id': str(u.pk),
+            'email': u.email,
+            'full_name': u.full_name,
+            'role': u.role,
+            'is_email_verified': u.is_email_verified,
+        })
+
+
+# ---------------------------------------------------------------------------
+# Register & email verification (unchanged)
+# ---------------------------------------------------------------------------
+
+class RegisterView(APIView):
+    """POST /api/auth/register — create a volunteer account and send verification email."""
 
     permission_classes = [AllowAny]
 
@@ -46,21 +186,15 @@ class RegisterView(APIView):
         full_name = serializer.validated_data['full_name']
         password = serializer.validated_data['password']
 
-        # SR-AUTH-06 (anti-enumeration): if this email is already registered we
-        # do NOT create a duplicate and do NOT reveal that the address exists.
-        # The response is identical to the new-registration path so an attacker
-        # cannot probe whether an address is in our system.
+        # SR-AUTH-06 (anti-enumeration): never reveal whether this email is
+        # already registered. Silently do nothing and return the same response.
         if not User.objects.filter(email=email).exists():
             user = User.objects.create_user(
                 email=email,
-                # SR-AUTH-01: create_user calls set_password, which hashes with
-                # Argon2id (first entry in PASSWORD_HASHERS). Raw password is
-                # never stored or logged.
+                # SR-AUTH-01: hashed with Argon2id by the configured hasher.
                 password=password,
                 full_name=full_name,
                 role=User.Role.VOLUNTEER,
-                # is_active=True so the account can log in once email is verified.
-                # The email-verified check is enforced at login time (added later).
                 is_active=True,
                 is_email_verified=False,
             )
@@ -100,17 +234,13 @@ def _issue_and_send_verification_token(user: User) -> None:
 
 
 class VerifyEmailView(APIView):
-    """POST /api/auth/verify-email
-
-    Consumes a single-use email verification token and marks the account verified.
-    """
+    """POST /api/auth/verify-email — consume a single-use token and mark account verified."""
 
     permission_classes = [AllowAny]
 
     def post(self, request):
         serializer = VerifyEmailSerializer(data=request.data)
         if not serializer.is_valid():
-            # Malformed input is treated as an invalid token (SR-AUTH-06).
             return Response(
                 {'detail': _GENERIC_VERIFY_ERROR},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -118,8 +248,6 @@ class VerifyEmailView(APIView):
 
         token_hash = _hash_token(serializer.validated_data['token'])
 
-        # Use a transaction + SELECT FOR UPDATE to make the token single-use
-        # even under concurrent requests with the same token.
         with transaction.atomic():
             try:
                 token_obj = (
@@ -129,15 +257,12 @@ class VerifyEmailView(APIView):
                     .get(token_hash=token_hash)
                 )
             except EmailVerificationToken.DoesNotExist:
-                # SR-AUTH-06: same error for a token that never existed, has
-                # expired, or has already been used — no distinction exposed.
                 return Response(
                     {'detail': _GENERIC_VERIFY_ERROR},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
             if not token_obj.is_valid():
-                # Covers: already used (used_at set) or expired (expires_at past).
                 return Response(
                     {'detail': _GENERIC_VERIFY_ERROR},
                     status=status.HTTP_400_BAD_REQUEST,

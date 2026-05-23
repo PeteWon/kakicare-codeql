@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 
     # Third-party
+    'corsheaders',               # CORS headers for the React SPA (different origin in dev).
     'rest_framework',
     'django_otp',  # TOTP MFA framework (installed; no MFA logic wired yet).
     'django_otp.plugins.otp_totp',  # TOTP device plugin.
@@ -58,6 +59,9 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    # CorsMiddleware must be before any response-generating middleware so it
+    # can add Access-Control-* headers (including on 4xx/5xx responses).
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -133,7 +137,6 @@ AUTH_PASSWORD_VALIDATORS = [
 # --- Django REST Framework ---------------------------------------------------
 # Secure-by-default posture: require authentication everywhere unless a view
 # explicitly opts out. Session auth pairs with the HttpOnly session cookie.
-# (No endpoints exist yet — this only sets the default policy.)
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework.authentication.SessionAuthentication',
@@ -141,6 +144,17 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
+    # DRF returns 403 for unauthenticated session-auth requests (no
+    # WWW-Authenticate header to emit). Remap to 401 so the SPA's
+    # ProtectedRoute can distinguish "not logged in" from "no permission".
+    'EXCEPTION_HANDLER': 'kakicare.exceptions.custom_exception_handler',
+    'DEFAULT_THROTTLE_CLASSES': [],  # throttles applied per-view, not globally
+    'DEFAULT_THROTTLE_RATES': {
+        # SR-AUTH-04: 5 login attempts per 15 minutes per source IP.
+        # The actual parse is in LoginRateThrottle.parse_rate; this entry is
+        # required by DRF's get_rate() lookup and serves as documentation.
+        'login': '5/15min',
+    },
 }
 
 
@@ -157,8 +171,27 @@ SESSION_COOKIE_SECURE = env.bool('SESSION_COOKIE_SECURE', default=not DEBUG)
 # while still sent on top-level navigations.
 SESSION_COOKIE_SAMESITE = 'Lax'
 
+# SR-AUTH-05: global session lifetime. Set per-session at login time:
+#   - Volunteers: request.session.set_expiry(8 * 3600)  (8 hours)
+#   - Staff: request.session.set_expiry(3600)           (1 hour, set after MFA)
+# The global value acts as a ceiling; per-session calls override it downward.
+SESSION_COOKIE_AGE = 8 * 3600  # 8 hours (volunteers); staff shortened at MFA step
+
+# CSRF cookie is intentionally NOT HttpOnly (Django default: False) so the SPA
+# can read the csrftoken cookie value and forward it as X-CSRFToken header on
+# state-changing requests. The session cookie remains HttpOnly.
+# SR-SESS-01: CSRF_COOKIE_HTTPONLY must remain False for the SPA CSRF flow.
+CSRF_COOKIE_HTTPONLY = False
+
 # CSRF cookie over HTTPS only in production.
 CSRF_COOKIE_SECURE = env.bool('CSRF_COOKIE_SECURE', default=not DEBUG)
+
+# SR-SESS-01: allow the React SPA origin to pass CSRF checks. Django verifies
+# the Origin/Referer header against this list for cross-origin POST requests.
+CSRF_TRUSTED_ORIGINS = env.list(
+    'CSRF_TRUSTED_ORIGINS',
+    default=['http://localhost:5173'],
+)
 
 # HSTS: instruct browsers to use HTTPS only. 0 in dev; one year in prod by
 # default. Only takes effect over HTTPS responses.
@@ -212,3 +245,18 @@ DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='noreply@kakicare.example
 # --- Frontend ----------------------------------------------------------------
 # Used when constructing links in outgoing emails (e.g. email verification).
 FRONTEND_BASE_URL = env('FRONTEND_BASE_URL', default='http://localhost:5173')
+
+
+# --- CORS --------------------------------------------------------------------
+# SR-SESS-01: restrict cross-origin requests to known frontend origins only.
+# CORS_ALLOW_CREDENTIALS=True is required so the browser includes the session
+# and CSRF cookies on cross-origin fetch(..., { credentials: 'include' }) calls.
+# NEVER set CORS_ALLOW_ALL_ORIGINS=True alongside CORS_ALLOW_CREDENTIALS=True —
+# that would allow any site to make credentialed requests as the logged-in user.
+CORS_ALLOWED_ORIGINS = env.list(
+    'CORS_ALLOWED_ORIGINS',
+    default=['http://localhost:5173'],
+)
+CORS_ALLOW_CREDENTIALS = True
+# Restrict CORS handling to /api/ paths; Django admin uses same-origin only.
+CORS_URLS_REGEX = r'^/api/.*$'
