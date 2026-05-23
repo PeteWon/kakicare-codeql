@@ -160,6 +160,8 @@ REST_FRAMEWORK = {
         'password_reset': '5/hour',
         # 30 senior-list requests per minute per source IP (AC-02/AC-06).
         'senior_list': '30/min',
+        # AC-04: 5 check-in code verifications per 15 minutes per source IP.
+        'checkin_verify': '5/15min',
     },
 }
 
@@ -256,6 +258,18 @@ OTP_TOTP_ISSUER = 'KakiCare'
 # --- Frontend ----------------------------------------------------------------
 # Used when constructing links in outgoing emails (e.g. email verification).
 FRONTEND_BASE_URL = env('FRONTEND_BASE_URL', default='http://localhost:5173')
+
+
+# --- Session disclosure window (SR-AUTHZ-03 / JIT disclosure) ----------------
+# How many hours before scheduled_start the volunteer may view the senior's
+# sensitive contact details (full address, phone, next-of-kin).
+SESSION_DISCLOSURE_BEFORE = env.int('SESSION_DISCLOSURE_BEFORE', default=2)
+# How many hours after scheduled_end the window stays open (e.g. for an
+# overrunning visit or to allow the volunteer to add their note).
+SESSION_DISCLOSURE_AFTER = env.int('SESSION_DISCLOSURE_AFTER', default=1)
+# Grace period (minutes) after scheduled_end before the flag_missed_sessions
+# management command marks a session as 'missed'. Allows natural overruns.
+SESSION_MISSED_GRACE = env.int('SESSION_MISSED_GRACE', default=30)
 
 
 # --- CORS --------------------------------------------------------------------

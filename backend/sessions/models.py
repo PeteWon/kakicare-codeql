@@ -23,6 +23,11 @@ class Session(models.Model):
         MISSED = 'missed', 'Missed'
         CANCELLED = 'cancelled', 'Cancelled'
 
+    class FollowUpOutcome(models.TextChoices):
+        SENIOR_WELL = 'senior_well', 'Senior is well'
+        RESCHEDULED = 'rescheduled', 'Session rescheduled'
+        ESCALATED = 'escalated', 'Welfare concern escalated'
+
     match = models.ForeignKey(
         'matching.Match', on_delete=models.CASCADE, related_name='sessions'
     )
@@ -60,6 +65,13 @@ class Session(models.Model):
     # COMPUTED from scheduled_start/scheduled_end and enforced server-side in the
     # permission/serializer layer later. It is deliberately NOT stored as a flag
     # here, so the window can't drift out of sync or be toggled directly.
+
+    cancel_reason = models.TextField(blank=True)
+
+    followup_outcome = models.CharField(
+        max_length=20, choices=FollowUpOutcome.choices, blank=True
+    )
+    followup_note = models.TextField(blank=True)
 
     created_at = models.DateTimeField(auto_now_add=True)
 
