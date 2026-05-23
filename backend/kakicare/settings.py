@@ -195,3 +195,20 @@ USE_TZ = True
 STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+
+# --- Email -------------------------------------------------------------------
+# SR-DATA: raw verification tokens appear only in email bodies, never in logs
+# or the database. For local dev, emails are printed to the console so no SMTP
+# setup is needed. For production, switch to an SMTP or transactional provider
+# (e.g. SES, SendGrid) by setting EMAIL_BACKEND and the associated SMTP vars.
+EMAIL_BACKEND = env(
+    'EMAIL_BACKEND',
+    default='django.core.mail.backends.console.EmailBackend',
+)
+DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='noreply@kakicare.example')
+
+
+# --- Frontend ----------------------------------------------------------------
+# Used when constructing links in outgoing emails (e.g. email verification).
+FRONTEND_BASE_URL = env('FRONTEND_BASE_URL', default='http://localhost:5173')
