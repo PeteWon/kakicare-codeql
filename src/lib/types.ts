@@ -339,6 +339,58 @@ export interface StaffSession {
 }
 
 // ---------------------------------------------------------------------------
+// Staff senior management types
+// ---------------------------------------------------------------------------
+
+/**
+ * Senior record summary — staff list view.
+ *
+ * SECURITY: Senior data is the most sensitive in the system. Never cache in
+ * localStorage or sessionStorage. Keep in component state only, fetched live.
+ * Every access is audit-logged server-side (AC-06, SR-AUD-01).
+ */
+export interface StaffSeniorSummary {
+  id: number;
+  full_name: string;
+  preferred_language: string;
+  address: string;
+  is_active: boolean;
+  created_at: ISODateString;
+  updated_at: ISODateString;
+}
+
+/**
+ * Full senior record — staff only.
+ *
+ * Every GET /api/staff/seniors/<id> is audit-logged server-side as senior.read
+ * (AC-06, SR-AUD-01). The frontend does nothing special; the backend records it.
+ */
+export interface StaffSeniorDetail extends StaffSeniorSummary {
+  phone_number: string;
+  accessibility_needs: string;
+  availability: Record<string, string[]>;
+  notes: string;
+  next_of_kin_name: string | null;
+  next_of_kin_contact: string | null;
+  created_by_id: number | null;
+  created_by_email: string | null;
+}
+
+/** Payload for POST /api/staff/seniors and PUT /api/staff/seniors/<id>. */
+export interface SeniorWritePayload {
+  full_name: string;
+  address: string;
+  phone_number: string;
+  preferred_language: string;
+  accessibility_needs: string;
+  availability: Record<string, string[]>;
+  notes: string;
+  next_of_kin_name: string;
+  next_of_kin_contact: string;
+  is_active?: boolean;
+}
+
+// ---------------------------------------------------------------------------
 
 /** Append-only audit record. Security-relevant actions are logged server-side. */
 export interface AuditLogEntry {

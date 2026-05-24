@@ -26,9 +26,12 @@ import type {
   ProfileSubmission,
   ProfileSubmissionResult,
   Senior,
+  SeniorWritePayload,
   Session,
   StaffApplicationDetail,
   StaffApplicationSummary,
+  StaffSeniorDetail,
+  StaffSeniorSummary,
   StaffSession,
   User,
   UserRole,
@@ -326,11 +329,6 @@ export const api = {
     return delay(mockSeniors); // MOCK
   },
 
-  async getSenior(id: string): Promise<Senior> {
-    // return apiFetch<Senior>(`/api/seniors/${id}`);
-    return delay(mockSeniors.find((s) => s.id === id) ?? mockSeniors[0]); // MOCK
-  },
-
   // --- Matches (MOCK — staff/non-volunteer facing) --------------------------
   async listMatches(): Promise<Match[]> {
     // return apiFetch<Match[]>('/api/matches');
@@ -456,6 +454,48 @@ export const api = {
     const qs = new URLSearchParams({ page_size: String(pageSize) });
     if (statusFilter) qs.set('status', statusFilter);
     return apiFetch<Paginated<StaffSession>>(`/api/staff/sessions/?${qs}`);
+  },
+
+  // --- Staff senior management (real) --------------------------------------
+  // SECURITY: Senior data is the most sensitive in the system. Do not cache
+  // responses in localStorage/sessionStorage. Every read/write is audit-logged
+  // server-side (AC-06, SR-AUD-01); the frontend does nothing special for audit.
+
+  async getSeniors(params?: {
+    search?: string;
+    is_active?: boolean;
+    page?: number;
+  }): Promise<Paginated<StaffSeniorSummary>> {
+    const qs = new URLSearchParams();
+    if (params?.search) qs.set('search', params.search);
+    if (params?.is_active !== undefined) qs.set('is_active', String(params.is_active));
+    if (params?.page && params.page > 1) qs.set('page', String(params.page));
+    return apiFetch<Paginated<StaffSeniorSummary>>(`/api/staff/seniors/?${qs}`);
+  },
+
+  async getSenior(id: number): Promise<StaffSeniorDetail> {
+    return apiFetch<StaffSeniorDetail>(`/api/staff/seniors/${id}/`);
+  },
+
+  async createSenior(payload: SeniorWritePayload): Promise<StaffSeniorDetail> {
+    return apiFetch<StaffSeniorDetail>('/api/staff/seniors/', {
+      method: 'POST',
+      body: payload,
+    });
+  },
+
+  async updateSenior(id: number, payload: SeniorWritePayload): Promise<StaffSeniorDetail> {
+    return apiFetch<StaffSeniorDetail>(`/api/staff/seniors/${id}/`, {
+      method: 'PUT',
+      body: payload,
+    });
+  },
+
+  async deactivateSenior(id: number): Promise<StaffSeniorDetail> {
+    // Soft-deactivate only — all session history and matches are preserved.
+    return apiFetch<StaffSeniorDetail>(`/api/staff/seniors/${id}/deactivate/`, {
+      method: 'POST',
+    });
   },
 
   // --- Authenticated document download -------------------------------------

@@ -31,6 +31,9 @@ import { SessionDetail } from './pages/volunteer/SessionDetail';
 import { StaffDashboard } from './pages/staff/StaffDashboard';
 import { Applications } from './pages/staff/Applications';
 import { ApplicationDetail } from './pages/staff/ApplicationDetail';
+import { Seniors } from './pages/staff/Seniors';
+import { SeniorDetail } from './pages/staff/SeniorDetail';
+import { SeniorForm } from './pages/staff/SeniorForm';
 
 export const router = createBrowserRouter([
   {
@@ -70,6 +73,11 @@ export const router = createBrowserRouter([
           { index: true, element: <StaffDashboard /> },
           { path: 'applications', element: <Applications /> },
           { path: 'applications/:id', element: <ApplicationDetail /> },
+          { path: 'seniors', element: <Seniors /> },
+          // seniors/new must be listed before seniors/:id so the static segment wins.
+          { path: 'seniors/new', element: <SeniorForm /> },
+          { path: 'seniors/:id', element: <SeniorDetail /> },
+          { path: 'seniors/:id/edit', element: <SeniorForm /> },
         ],
       },
     ],
