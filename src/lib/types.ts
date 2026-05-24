@@ -427,6 +427,23 @@ export interface StaffMatch {
 
 // ---------------------------------------------------------------------------
 
+/**
+ * Response from POST /api/staff/sessions/<id>/confirm/.
+ *
+ * AC-04: checkin_code is present ONLY in this response — it is never stored
+ * server-side (only its SHA-256 hash is persisted). Display it immediately to
+ * the staff member and never write it to localStorage, sessionStorage, or any
+ * store that outlives the modal. After the modal is dismissed the code is gone
+ * and CANNOT be retrieved. It travels: staff → senior (phone) → volunteer (in
+ * person at session start). The volunteer never sees the code in advance.
+ */
+export interface ConfirmSessionResult extends StaffSession {
+  checkin_code: string;
+}
+
+/** Possible follow-up outcomes for a missed session. */
+export type FollowUpOutcome = 'senior_well' | 'rescheduled' | 'escalated';
+
 /** Append-only audit record. Security-relevant actions are logged server-side. */
 export interface AuditLogEntry {
   id: string;

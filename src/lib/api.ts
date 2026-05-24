@@ -17,6 +17,8 @@
 
 import type {
   AuditLogEntry,
+  ConfirmSessionResult,
+  FollowUpOutcome,
   LoginResult,
   Match,
   MfaResult,
@@ -451,13 +453,49 @@ export const api = {
 
   // --- Staff sessions (real) -----------------------------------------------
 
-  async getStaffSessions(
-    statusFilter?: string,
-    pageSize = 20,
-  ): Promise<Paginated<StaffSession>> {
-    const qs = new URLSearchParams({ page_size: String(pageSize) });
-    if (statusFilter) qs.set('status', statusFilter);
+  async getStaffSessions(params?: {
+    status?: string;
+    page?: number;
+    page_size?: number;
+  }): Promise<Paginated<StaffSession>> {
+    const qs = new URLSearchParams({ page_size: String(params?.page_size ?? 20) });
+    if (params?.status) qs.set('status', params.status);
+    if (params?.page && params.page > 1) qs.set('page', String(params.page));
     return apiFetch<Paginated<StaffSession>>(`/api/staff/sessions/?${qs}`);
+  },
+
+  // AC-04: The confirmation endpoint returns the raw 6-digit check-in code
+  // exactly ONCE. Only its SHA-256 hash is stored server-side — the raw code
+  // cannot be retrieved after this response. Display it to the staff member
+  // immediately; NEVER write it to localStorage, sessionStorage, or any store
+  // that outlives the active modal. The code travels out-of-band:
+  //   staff → senior (phone call) → volunteer (in person at session start).
+  // The volunteer never sees the code in advance — this relay is what makes
+  // check-in a proof-of-presence control (AC-04).
+  async confirmSession(id: number): Promise<ConfirmSessionResult> {
+    return apiFetch<ConfirmSessionResult>(`/api/staff/sessions/${id}/confirm/`, {
+      method: 'POST',
+    });
+  },
+
+  async cancelSession(id: number, cancelReason: string): Promise<StaffSession> {
+    return apiFetch<StaffSession>(`/api/staff/sessions/${id}/cancel/`, {
+      method: 'POST',
+      body: { cancel_reason: cancelReason },
+    });
+  },
+
+  // WELFARE NOTE: a missed session means a vulnerable senior was not visited or
+  // called as expected. Recording the follow-up outcome closes the welfare concern.
+  async recordSessionFollowup(
+    id: number,
+    followupOutcome: FollowUpOutcome,
+    followupNote: string,
+  ): Promise<StaffSession> {
+    return apiFetch<StaffSession>(`/api/staff/sessions/${id}/followup/`, {
+      method: 'POST',
+      body: { followup_outcome: followupOutcome, followup_note: followupNote },
+    });
   },
 
   // --- Staff senior management (real) --------------------------------------

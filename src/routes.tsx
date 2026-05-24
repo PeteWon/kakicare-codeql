@@ -36,6 +36,7 @@ import { SeniorDetail } from './pages/staff/SeniorDetail';
 import { SeniorForm } from './pages/staff/SeniorForm';
 import { StaffMatches } from './pages/staff/StaffMatches';
 import { ProposeMatch } from './pages/staff/ProposeMatch';
+import { Sessions } from './pages/staff/Sessions';
 
 export const router = createBrowserRouter([
   {
@@ -83,6 +84,7 @@ export const router = createBrowserRouter([
           // matches/new must be listed before any future matches/:id route.
           { path: 'matches', element: <StaffMatches /> },
           { path: 'matches/new', element: <ProposeMatch /> },
+          { path: 'sessions', element: <Sessions /> },
         ],
       },
     ],

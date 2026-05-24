@@ -171,9 +171,9 @@ export function StaffDashboard() {
         // Fetch in parallel: pending applications count, sessions by status.
         const [pendingApps, missed, inProgress, confirmed] = await Promise.all([
           api.getStaffApplications('pending_review'),
-          api.getStaffSessions('missed', 50),
-          api.getStaffSessions('in_progress', 50),
-          api.getStaffSessions('confirmed', 100),
+          api.getStaffSessions({ status: 'missed', page_size: 50 }),
+          api.getStaffSessions({ status: 'in_progress', page_size: 50 }),
+          api.getStaffSessions({ status: 'confirmed', page_size: 100 }),
         ]);
 
         // Split confirmed sessions into today vs upcoming (client-side by date).

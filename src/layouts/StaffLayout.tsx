@@ -6,6 +6,7 @@ const navItems = [
   { to: '/staff/volunteers', label: 'Volunteers' },
   { to: '/staff/seniors', label: 'Seniors' },
   { to: '/staff/matches', label: 'Matches' },
+  { to: '/staff/sessions', label: 'Sessions' },
   { to: '/staff/audit', label: 'Audit log' },
 ];
 
