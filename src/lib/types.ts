@@ -391,6 +391,41 @@ export interface SeniorWritePayload {
 }
 
 // ---------------------------------------------------------------------------
+// Staff match management types
+// ---------------------------------------------------------------------------
+
+export type StaffMatchStatus = 'proposed' | 'active' | 'ended';
+
+/**
+ * A match as returned by GET /api/staff/matches/.
+ *
+ * SECURITY: Display only what the backend returns. Do not add senior contact
+ * fields here — governed by the backend's data-minimisation rules.
+ * AC-05: Listing all pairings for a volunteer helps staff spot repeat targeting
+ * that may indicate stalking-type behaviour.
+ */
+export interface StaffMatch {
+  id: number;
+  status: StaffMatchStatus;
+  volunteer: {
+    id: number;
+    full_name: string;
+    email: string;
+  };
+  senior: {
+    id: number;
+    full_name: string;
+    preferred_language: string;
+  };
+  volunteer_accepted_at: ISODateString | null;
+  senior_confirmed_at: ISODateString | null;
+  ended_at: ISODateString | null;
+  created_at: ISODateString;
+  created_by_id: number | null;
+  created_by_email: string | null;
+}
+
+// ---------------------------------------------------------------------------
 
 /** Append-only audit record. Security-relevant actions are logged server-side. */
 export interface AuditLogEntry {

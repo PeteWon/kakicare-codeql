@@ -34,6 +34,8 @@ import { ApplicationDetail } from './pages/staff/ApplicationDetail';
 import { Seniors } from './pages/staff/Seniors';
 import { SeniorDetail } from './pages/staff/SeniorDetail';
 import { SeniorForm } from './pages/staff/SeniorForm';
+import { StaffMatches } from './pages/staff/StaffMatches';
+import { ProposeMatch } from './pages/staff/ProposeMatch';
 
 export const router = createBrowserRouter([
   {
@@ -78,6 +80,9 @@ export const router = createBrowserRouter([
           { path: 'seniors/new', element: <SeniorForm /> },
           { path: 'seniors/:id', element: <SeniorDetail /> },
           { path: 'seniors/:id/edit', element: <SeniorForm /> },
+          // matches/new must be listed before any future matches/:id route.
+          { path: 'matches', element: <StaffMatches /> },
+          { path: 'matches/new', element: <ProposeMatch /> },
         ],
       },
     ],

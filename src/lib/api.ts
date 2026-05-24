@@ -30,6 +30,8 @@ import type {
   Session,
   StaffApplicationDetail,
   StaffApplicationSummary,
+  StaffMatch,
+  StaffMatchStatus,
   StaffSeniorDetail,
   StaffSeniorSummary,
   StaffSession,
@@ -422,9 +424,11 @@ export const api = {
   async getStaffApplications(
     statusFilter = 'pending_review',
     page?: number,
+    pageSize?: number,
   ): Promise<Paginated<StaffApplicationSummary>> {
     const qs = new URLSearchParams({ status: statusFilter });
     if (page && page > 1) qs.set('page', String(page));
+    if (pageSize) qs.set('page_size', String(pageSize));
     return apiFetch<Paginated<StaffApplicationSummary>>(`/api/staff/applications/?${qs}`);
   },
 
@@ -465,11 +469,13 @@ export const api = {
     search?: string;
     is_active?: boolean;
     page?: number;
+    page_size?: number;
   }): Promise<Paginated<StaffSeniorSummary>> {
     const qs = new URLSearchParams();
     if (params?.search) qs.set('search', params.search);
     if (params?.is_active !== undefined) qs.set('is_active', String(params.is_active));
     if (params?.page && params.page > 1) qs.set('page', String(params.page));
+    if (params?.page_size) qs.set('page_size', String(params.page_size));
     return apiFetch<Paginated<StaffSeniorSummary>>(`/api/staff/seniors/?${qs}`);
   },
 
@@ -494,6 +500,46 @@ export const api = {
   async deactivateSenior(id: number): Promise<StaffSeniorDetail> {
     // Soft-deactivate only — all session history and matches are preserved.
     return apiFetch<StaffSeniorDetail>(`/api/staff/seniors/${id}/deactivate/`, {
+      method: 'POST',
+    });
+  },
+
+  // --- Staff match management (real) ---------------------------------------
+  // SECURITY: Staff-only. The backend enforces that only approved volunteers
+  // can be matched and that non-ended duplicate pairings are rejected.
+  // The "approved volunteer" filter in the dropdown is a usability aid only.
+  // AC-05: Surfacing all pairings helps staff spot repeat targeting.
+
+  async getMatches(params?: {
+    status?: StaffMatchStatus | '';
+    volunteer_id?: number;
+    senior_id?: number;
+    page?: number;
+  }): Promise<Paginated<StaffMatch>> {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set('status', params.status);
+    if (params?.volunteer_id) qs.set('volunteer_id', String(params.volunteer_id));
+    if (params?.senior_id) qs.set('senior_id', String(params.senior_id));
+    if (params?.page && params.page > 1) qs.set('page', String(params.page));
+    return apiFetch<Paginated<StaffMatch>>(`/api/staff/matches/?${qs}`);
+  },
+
+  async proposeMatch(volunteerId: number, seniorId: number): Promise<StaffMatch> {
+    return apiFetch<StaffMatch>('/api/staff/matches/', {
+      method: 'POST',
+      body: { volunteer_id: volunteerId, senior_id: seniorId },
+    });
+  },
+
+  async recordSeniorConfirmation(matchId: number): Promise<StaffMatch> {
+    return apiFetch<StaffMatch>(
+      `/api/staff/matches/${matchId}/record-senior-confirmation/`,
+      { method: 'POST' },
+    );
+  },
+
+  async endMatch(matchId: number): Promise<StaffMatch> {
+    return apiFetch<StaffMatch>(`/api/staff/matches/${matchId}/end/`, {
       method: 'POST',
     });
   },
