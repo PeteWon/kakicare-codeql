@@ -230,16 +230,34 @@ export function Login() {
             </div>
           ) : (
             <>
-              <div>
-                <p className="text-sm font-medium text-primary-800">
-                  Secret key (enter manually in your app)
-                </p>
-                <p className="mt-1 break-all rounded-xl bg-cream-100 px-3 py-2 font-mono text-sm text-primary-900">
-                  {setupData.secret_key}
-                </p>
-                <p className="mt-1 text-xs text-primary-500">
-                  Issuer: KakiCare
-                </p>
+              <div className="space-y-3">
+                <div>
+                  <p className="text-sm font-medium text-primary-800">
+                    Secret key{' '}
+                    <span className="font-normal text-primary-500">
+                      (enter manually in your authenticator app)
+                    </span>
+                  </p>
+                  <p className="mt-1 break-all rounded-xl bg-cream-100 px-3 py-2 font-mono text-sm text-primary-900 select-all">
+                    {setupData.secret_key}
+                  </p>
+                  <p className="mt-1 text-xs text-primary-500">Issuer: KakiCare</p>
+                </div>
+
+                <div>
+                  <p className="text-sm font-medium text-primary-800">
+                    Provisioning URI{' '}
+                    <span className="font-normal text-primary-500">
+                      (for apps that support URI / QR import, e.g. Aegis)
+                    </span>
+                  </p>
+                  {/* No QR library per project stack constraint — show URI as
+                      copyable text. Apps like Aegis accept otpauth:// URIs via
+                      manual import. */}
+                  <p className="mt-1 break-all rounded-xl bg-cream-100 px-3 py-2 font-mono text-xs text-primary-700 select-all">
+                    {setupData.config_url}
+                  </p>
+                </div>
               </div>
 
               <div>
