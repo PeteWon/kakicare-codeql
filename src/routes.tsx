@@ -26,7 +26,11 @@ import { NotFound } from './pages/public/NotFound';
 import { Dashboard } from './pages/volunteer/Dashboard';
 import { Matches } from './pages/volunteer/Matches';
 import { CompleteProfile } from './pages/volunteer/CompleteProfile';
+import { BookSession } from './pages/volunteer/BookSession';
+import { SessionDetail } from './pages/volunteer/SessionDetail';
 import { StaffDashboard } from './pages/staff/StaffDashboard';
+import { Applications } from './pages/staff/Applications';
+import { ApplicationDetail } from './pages/staff/ApplicationDetail';
 
 export const router = createBrowserRouter([
   {
@@ -49,6 +53,8 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <Dashboard /> },
           { path: 'matches', element: <Matches /> },
+          { path: 'matches/:matchId/book', element: <BookSession /> },
+          { path: 'sessions/:id', element: <SessionDetail /> },
           { path: 'profile', element: <CompleteProfile /> },
         ],
       },
@@ -60,7 +66,11 @@ export const router = createBrowserRouter([
       {
         path: '/staff',
         element: <StaffLayout />,
-        children: [{ index: true, element: <StaffDashboard /> }],
+        children: [
+          { index: true, element: <StaffDashboard /> },
+          { path: 'applications', element: <Applications /> },
+          { path: 'applications/:id', element: <ApplicationDetail /> },
+        ],
       },
     ],
   },

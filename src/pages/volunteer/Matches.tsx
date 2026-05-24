@@ -231,13 +231,10 @@ function ActiveMatchCard({ match }: { match: VolunteerMatch }) {
       </div>
 
       <div className="mt-4">
-        {/*
-          Session booking screen is coming in a later sprint.
-          Full senior contact details (address, phone, next-of-kin) are only
-          disclosed just-in-time when a session is confirmed — NOT here.
-        */}
+        {/* Full senior contact details (address, phone, next-of-kin) are only
+            disclosed just-in-time when a session is confirmed — NOT here. */}
         <Link
-          to={`/volunteer/sessions/new?match_id=${match.id}`}
+          to={`/volunteer/matches/${match.id}/book`}
           aria-label={`Book a session with ${match.senior.first_name}`}
         >
           <Button variant="secondary" size="sm">

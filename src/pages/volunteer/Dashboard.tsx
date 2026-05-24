@@ -197,6 +197,14 @@ function SessionsSummary({ sessions }: { sessions: VolunteerSession[] }) {
                   {statusLabel[s.status] ?? s.status}
                 </span>
               </div>
+              <div className="mt-3">
+                <Link
+                  to={`/volunteer/sessions/${s.id}`}
+                  className="text-sm font-medium text-primary-600 hover:text-primary-800"
+                >
+                  View details →
+                </Link>
+              </div>
             </Card>
           ))}
         </div>

@@ -254,6 +254,91 @@ export interface VolunteerProfileData {
 }
 
 // ---------------------------------------------------------------------------
+// Staff-facing types
+// ---------------------------------------------------------------------------
+
+/**
+ * A document uploaded by a volunteer.
+ *
+ * SECURITY (SR-DATA-03): download_url points to /api/volunteer/documents/<id>/download,
+ * which requires an authenticated session. Never embed it as a public <img src> or
+ * plain <a href> — always fetch with credentials and create a local object URL.
+ */
+export interface DocumentInfo {
+  id: number;
+  document_type: 'identity' | 'declaration';
+  original_filename: string;
+  content_type: string; // server-detected MIME; never trust client-supplied value
+  uploaded_at: ISODateString;
+  download_url: string; // relative path, e.g. /api/volunteer/documents/3/download
+}
+
+/** Volunteer application summary — staff list view (no documents, no internal note). */
+export interface StaffApplicationSummary {
+  id: number;
+  user_id: number;
+  user_email: string;
+  user_full_name: string;
+  contact_number: string;
+  languages: string[];
+  travel_areas: string[];
+  application_status: ApplicationStatus;
+  reviewed_at: ISODateString | null;
+  created_at: ISODateString;
+  updated_at: ISODateString;
+}
+
+/**
+ * Full application detail — staff only.
+ *
+ * SECURITY: internal_review_note is staff-only. It must NEVER be rendered in
+ * any volunteer-facing page, included in a volunteer-facing API response, or
+ * forwarded to the volunteer in any notification. The backend enforces this by
+ * using separate serializer classes; displaying it on this staff-only page is
+ * correct and intended.
+ */
+export interface StaffApplicationDetail extends StaffApplicationSummary {
+  availability: Record<string, string[]>;
+  about_text: string;
+  internal_review_note: string;
+  reviewed_by_id: number | null;
+  reviewed_by_email: string | null;
+  documents: DocumentInfo[];
+}
+
+/** Session as returned by the staff sessions endpoint — full senior & volunteer details. */
+export interface StaffSession {
+  id: number;
+  match_id: number;
+  session_type: 'visit' | 'call';
+  scheduled_start: ISODateString;
+  scheduled_end: ISODateString;
+  status: SessionStatus;
+  checkin_at: ISODateString | null;
+  checkout_at: ISODateString | null;
+  volunteer_note: string | null;
+  confirmed_by_id: number | null;
+  cancel_reason: string | null;
+  followup_outcome: string | null;
+  followup_note: string | null;
+  senior: {
+    id: number;
+    full_name: string;
+    address: string;
+    phone_number: string;
+    preferred_language: string;
+    next_of_kin_name: string | null;
+    next_of_kin_contact: string | null;
+  };
+  volunteer: {
+    id: number;
+    full_name: string;
+    email: string;
+  };
+  created_at: ISODateString;
+}
+
+// ---------------------------------------------------------------------------
 
 /** Append-only audit record. Security-relevant actions are logged server-side. */
 export interface AuditLogEntry {

@@ -27,6 +27,9 @@ import type {
   ProfileSubmissionResult,
   Senior,
   Session,
+  StaffApplicationDetail,
+  StaffApplicationSummary,
+  StaffSession,
   User,
   UserRole,
   VerifyEmailResult,
@@ -374,5 +377,100 @@ export const api = {
 
   async getVolunteerSessions(): Promise<Paginated<VolunteerSession>> {
     return apiFetch<Paginated<VolunteerSession>>('/api/volunteer/sessions/');
+  },
+
+  async bookSession(
+    matchId: number,
+    sessionType: 'visit' | 'call',
+    scheduledStart: string,
+    scheduledEnd: string,
+  ): Promise<VolunteerSession> {
+    // Backend also validates: start in future, end after start, no overlaps,
+    // match must be active and belong to this volunteer (SR-AUTHZ-02).
+    return apiFetch<VolunteerSession>('/api/volunteer/sessions/', {
+      method: 'POST',
+      body: {
+        match_id: matchId,
+        session_type: sessionType,
+        scheduled_start: scheduledStart,
+        scheduled_end: scheduledEnd,
+      },
+    });
+  },
+
+  async getSession(id: number): Promise<VolunteerSession> {
+    return apiFetch<VolunteerSession>(`/api/volunteer/sessions/${id}/`);
+  },
+
+  async checkInSession(id: number, code: string): Promise<VolunteerSession> {
+    // SECURITY: code is validated server-side against a SHA-256 hash (AC-04).
+    // Do not store or log the code anywhere in the frontend.
+    // Attempts are rate-limited server-side (5 per 15 min per IP).
+    return apiFetch<VolunteerSession>(`/api/volunteer/sessions/${id}/checkin/`, {
+      method: 'POST',
+      body: { code },
+    });
+  },
+
+  async checkOutSession(id: number, volunteerNote?: string): Promise<VolunteerSession> {
+    return apiFetch<VolunteerSession>(`/api/volunteer/sessions/${id}/checkout/`, {
+      method: 'POST',
+      body: { volunteer_note: volunteerNote ?? '' },
+    });
+  },
+
+  // --- Staff applications (real) -------------------------------------------
+
+  async getStaffApplications(
+    statusFilter = 'pending_review',
+    page?: number,
+  ): Promise<Paginated<StaffApplicationSummary>> {
+    const qs = new URLSearchParams({ status: statusFilter });
+    if (page && page > 1) qs.set('page', String(page));
+    return apiFetch<Paginated<StaffApplicationSummary>>(`/api/staff/applications/?${qs}`);
+  },
+
+  async getStaffApplication(id: number): Promise<StaffApplicationDetail> {
+    return apiFetch<StaffApplicationDetail>(`/api/staff/applications/${id}/`);
+  },
+
+  async submitApplicationDecision(
+    id: number,
+    decision: 'approve' | 'reject' | 'request_changes',
+    internalReviewNote: string,
+  ): Promise<StaffApplicationDetail> {
+    // SECURITY: internal_review_note is staff-only — never forwarded to the
+    // volunteer. The backend enforces this via separate serializer classes.
+    return apiFetch<StaffApplicationDetail>(`/api/staff/applications/${id}/decision/`, {
+      method: 'POST',
+      body: { decision, internal_review_note: internalReviewNote },
+    });
+  },
+
+  // --- Staff sessions (real) -----------------------------------------------
+
+  async getStaffSessions(
+    statusFilter?: string,
+    pageSize = 20,
+  ): Promise<Paginated<StaffSession>> {
+    const qs = new URLSearchParams({ page_size: String(pageSize) });
+    if (statusFilter) qs.set('status', statusFilter);
+    return apiFetch<Paginated<StaffSession>>(`/api/staff/sessions/?${qs}`);
+  },
+
+  // --- Authenticated document download -------------------------------------
+
+  // SECURITY (SR-DATA-03): Documents are stored outside the web root and served
+  // ONLY via the authenticated download endpoint. Never use the download_url as
+  // a public <img src> or bare <a href> — the endpoint requires a valid session
+  // cookie. Always fetch with credentials and create a temporary object URL.
+  async downloadDocumentBlob(downloadPath: string): Promise<Blob> {
+    const response = await fetch(`${BASE_URL}${downloadPath}`, {
+      credentials: 'include',
+    });
+    if (!response.ok) {
+      throw new ApiError(response.status, response.statusText);
+    }
+    return response.blob();
   },
 };
