@@ -30,6 +30,7 @@ import { Matches } from './pages/volunteer/Matches';
 import { CompleteProfile } from './pages/volunteer/CompleteProfile';
 import { BookSession } from './pages/volunteer/BookSession';
 import { SessionDetail } from './pages/volunteer/SessionDetail';
+import { SessionHistory } from './pages/volunteer/SessionHistory';
 import { StaffDashboard } from './pages/staff/StaffDashboard';
 import { Applications } from './pages/staff/Applications';
 import { ApplicationDetail } from './pages/staff/ApplicationDetail';
@@ -64,6 +65,8 @@ export const router = createBrowserRouter([
           { index: true, element: <Dashboard /> },
           { path: 'matches', element: <Matches /> },
           { path: 'matches/:matchId/book', element: <BookSession /> },
+          // sessions must be listed before sessions/:id so the static segment wins.
+          { path: 'sessions', element: <SessionHistory /> },
           { path: 'sessions/:id', element: <SessionDetail /> },
           { path: 'profile', element: <CompleteProfile /> },
         ],

@@ -167,8 +167,14 @@ function SessionsSummary({ sessions }: { sessions: VolunteerSession[] }) {
 
   return (
     <section aria-labelledby="sessions-heading">
-      <div className="mb-3">
+      <div className="mb-3 flex items-center justify-between">
         <CardTitle id="sessions-heading">Upcoming sessions</CardTitle>
+        <Link
+          to="/volunteer/sessions"
+          className="text-sm font-medium text-primary-600 hover:text-primary-800"
+        >
+          See all
+        </Link>
       </div>
 
       {sessions.length === 0 ? (
