@@ -1,0 +1,74 @@
+# Production stack for the EC2 deployment.
+#
+#   nginx  :80           — public entry point (frontend SPA + reverse proxy)
+#   web    :8000 (intl.) — Django + gunicorn
+#   db     :5432 (intl.) — PostgreSQL 16
+#
+# Only nginx publishes a port. Django and Postgres are reachable only inside
+# the Docker network (no `ports:` for those services on purpose).
+#
+# Bring the stack up with:
+#   docker compose -f docker-compose.prod.yml up -d --build
+
+services:
+  db:
+    image: postgres:16
+    container_name: kakicare-db-prod
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    volumes:
+      - kakicare_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: ./backend
+    container_name: kakicare-web-prod
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      # Django writes collected staticfiles here; nginx serves them from the
+      # same named volume (see static_files mount on nginx below).
+      - static_files:/app/staticfiles
+      # Uploaded volunteer documents (SR-DATA-03): outside the web root,
+      # persisted across container rebuilds via a named volume.
+      - private_media:/app/private_media
+    # Apply migrations and collect static files on every start; gunicorn runs
+    # after both succeed. Migration is idempotent — re-running is safe.
+    command: >
+      sh -c "python manage.py migrate --noinput &&
+             python manage.py collectstatic --noinput &&
+             gunicorn kakicare.wsgi:application
+                      --bind 0.0.0.0:8000
+                      --workers 3
+                      --access-logfile -
+                      --error-logfile -"
+
+  nginx:
+    build:
+      # Context is the repo root so the Dockerfile can reach both ./frontend
+      # (to build the SPA) and ./nginx (for nginx.conf).
+      context: .
+      dockerfile: nginx/Dockerfile
+    container_name: kakicare-nginx-prod
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - static_files:/usr/share/nginx/static:ro
+    depends_on:
+      - web
+
+volumes:
+  kakicare_pgdata:
+  static_files:
+  private_media:

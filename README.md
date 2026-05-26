@@ -133,3 +133,107 @@ docker compose down            # stop the container (data is kept)
 docker compose down -v         # stop AND delete the database volume (full reset)
 ```
 
+## Deployment (EC2)
+
+Production runs as a self-contained Docker Compose stack on the school-provided
+EC2 instance. Three containers — `nginx` (port 80), `web` (gunicorn + Django,
+internal), `db` (Postgres, internal). Only port 80 is exposed.
+
+### Test the production stack locally first
+
+Before pushing to the EC2, run the production stack on your machine to confirm
+it builds and starts cleanly. Copy `backend/.env.prod.example` to `backend/.env`
+(or use a different file via `--env-file`) and set a `SECRET_KEY` and
+`POSTGRES_PASSWORD`. Then:
+
+```bash
+docker compose -f docker-compose.prod.yml up --build
+```
+
+Visit <http://localhost> — you should see the React SPA, with the API reachable
+at `/api/...` on the same origin. Bring it down with `Ctrl-C` then
+`docker compose -f docker-compose.prod.yml down`.
+
+### First-time EC2 setup
+
+SSH into the EC2 using the key you were given:
+
+```bash
+ssh -i path/to/ICT2216-AY2526-T3-student18.pem student18@18.221.83.106
+```
+
+On the EC2 host, install Docker (Ubuntu — adjust if the image is different):
+
+```bash
+sudo apt-get update
+sudo apt-get install -y docker.io docker-compose-plugin git
+sudo systemctl enable --now docker
+sudo usermod -aG docker $USER           # then log out + back in for group to apply
+```
+
+Configure the host firewall — **always allow 22 before enabling**:
+
+```bash
+sudo ufw allow 22/tcp
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp     # reserved for future HTTPS
+sudo ufw enable
+sudo ufw status
+```
+
+Clone the repo and prepare the production env file:
+
+```bash
+git clone https://github.com/Brxndxnnnn/ICT2216-TEAM-18-SSD.git kakicare
+cd kakicare
+cp backend/.env.prod.example backend/.env
+# Edit backend/.env: set SECRET_KEY and POSTGRES_PASSWORD to real, secret values.
+nano backend/.env
+```
+
+Bring the stack up:
+
+```bash
+docker compose -f docker-compose.prod.yml up -d --build
+docker compose -f docker-compose.prod.yml logs -f      # watch startup
+```
+
+Migrations run automatically on container start. Create the first staff user:
+
+```bash
+docker compose -f docker-compose.prod.yml exec web python manage.py createsuperuser
+```
+
+Verify in a browser: <http://18.221.83.106/>.
+
+### Set up automated deploys (GitHub Actions)
+
+CI (`.github/workflows/ci.yml`) runs on every push and PR. Deploys
+(`.github/workflows/deploy.yml`) run after CI passes on `main`. Configure these
+repository secrets at **Settings → Secrets and variables → Actions**:
+
+| Secret name        | Value                                                       |
+| ------------------ | ----------------------------------------------------------- |
+| `EC2_HOST`         | `18.221.83.106`                                             |
+| `EC2_USER`         | `student18`                                                 |
+| `EC2_SSH_KEY`      | The **full contents** of the `.pem` file (including the `BEGIN`/`END` lines) |
+| `EC2_DEPLOY_DIR`   | `/home/student18/kakicare`                                  |
+
+Then merge a change into `main` — CI runs, deploy follows, smoke test confirms
+nginx is responding. Subsequent deploys take ~30 seconds.
+
+### Day-to-day
+
+```bash
+# Tail logs
+docker compose -f docker-compose.prod.yml logs -f web nginx
+
+# Restart after editing backend/.env
+docker compose -f docker-compose.prod.yml restart web
+
+# Roll back to a previous commit
+git checkout <commit-sha>
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+

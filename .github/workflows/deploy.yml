@@ -1,0 +1,83 @@
+# Continuous delivery — runs after CI passes on main.
+# SSHes into the EC2, pulls the latest code, rebuilds the Docker stack.
+#
+# Required repository secrets (Settings → Secrets and variables → Actions):
+#   EC2_HOST       — the public IP (e.g. 18.221.83.106)
+#   EC2_USER       — the SSH username (student18)
+#   EC2_SSH_KEY    — the FULL contents of the .pem file (including BEGIN/END lines)
+#   EC2_DEPLOY_DIR — absolute path on the EC2 where the repo is cloned
+#                    (e.g. /home/student18/kakicare)
+
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: ['CI']
+    types: [completed]
+    branches: [main]
+
+# Only one deploy at a time; queue the next one rather than running in parallel.
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to EC2
+    runs-on: ubuntu-latest
+    # Only run if the upstream CI run succeeded.
+    if: github.event.workflow_run.conclusion == 'success'
+    environment:
+      name: production
+      url: http://${{ secrets.EC2_HOST }}/
+
+    steps:
+      - name: Configure SSH
+        env:
+          EC2_SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$EC2_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts
+
+      - name: Deploy
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          EC2_USER: ${{ secrets.EC2_USER }}
+          EC2_DEPLOY_DIR: ${{ secrets.EC2_DEPLOY_DIR }}
+        run: |
+          ssh -i ~/.ssh/deploy_key "$EC2_USER@$EC2_HOST" bash -s <<EOF
+            set -euo pipefail
+            cd "$EC2_DEPLOY_DIR"
+            git fetch --all --prune
+            git reset --hard origin/main
+            docker compose -f docker-compose.prod.yml pull || true
+            docker compose -f docker-compose.prod.yml up -d --build
+            # Migrations run inside the web container's startup command,
+            # but exec one more time to be explicit (no-op if already current).
+            docker compose -f docker-compose.prod.yml exec -T web \
+              python manage.py migrate --noinput
+            # Prune dangling images so the EC2 disk doesn't fill over time.
+            docker image prune -f
+          EOF
+
+      - name: Smoke test
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+        run: |
+          # Give the stack a moment to settle, then make sure nginx is up.
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            if curl -fsS -o /dev/null -w '%{http_code}\n' "http://$EC2_HOST/" | grep -qE '^(200|301|302)$'; then
+              echo "Smoke test passed."
+              exit 0
+            fi
+            echo "Attempt $i: not ready yet, retrying in 3s…"
+            sleep 3
+          done
+          echo "Smoke test failed — http://$EC2_HOST/ is not responding."
+          exit 1
