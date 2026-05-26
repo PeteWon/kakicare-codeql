@@ -407,22 +407,17 @@ export type StaffMatchStatus = 'proposed' | 'active' | 'ended';
 export interface StaffMatch {
   id: number;
   status: StaffMatchStatus;
-  volunteer: {
-    id: number;
-    full_name: string;
-    email: string;
-  };
-  senior: {
-    id: number;
-    full_name: string;
-    preferred_language: string;
-  };
+  volunteer_id: number;
+  volunteer_full_name: string;
+  volunteer_email: string;
+  senior_id: number;
+  senior_full_name: string;
+  proposed_by_id: number | null;
+  proposed_by_email: string | null;
   volunteer_accepted_at: ISODateString | null;
   senior_confirmed_at: ISODateString | null;
   ended_at: ISODateString | null;
   created_at: ISODateString;
-  created_by_id: number | null;
-  created_by_email: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -456,4 +451,17 @@ export interface AuditLogEntry {
   /** Optional structured context (IP, before/after, etc.). */
   metadata: Record<string, unknown> | null;
   createdAt: ISODateString;
+}
+
+/** Audit log entry shape returned by GET /api/staff/audit-log/ (snake_case). */
+export interface StaffAuditLogEntry {
+  id: number;
+  user_id: number | null;
+  user_email: string | null;
+  user_role: string;
+  action: string;
+  target_type: string;
+  target_id: string;
+  request_ip: string | null;
+  timestamp: ISODateString;
 }

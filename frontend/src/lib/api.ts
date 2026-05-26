@@ -32,6 +32,7 @@ import type {
   Session,
   StaffApplicationDetail,
   StaffApplicationSummary,
+  StaffAuditLogEntry,
   StaffMatch,
   StaffMatchStatus,
   StaffSeniorDetail,
@@ -300,20 +301,49 @@ export const api = {
     data: ProfileSubmission,
     files: ProfileDocuments,
   ): Promise<ProfileSubmissionResult> {
-    // const form = new FormData();
-    // form.append('profile', JSON.stringify(data));
-    // form.append('identityDocument', files.identityDocument);
-    // form.append('declarationForm', files.declarationForm);
-    // const res = await fetch(`${BASE_URL}/api/volunteer/profile`, {
-    //   method: 'POST',
-    //   credentials: 'include',
-    //   headers: { 'X-CSRFToken': getCsrfToken() },
-    //   body: form,
-    // });
-    // return (await res.json()) as ProfileSubmissionResult;
-    void data;
-    void files;
-    return delay({ status: 'success' }); // MOCK
+    // Convert separate days/blocks selections into the backend's availability
+    // format: { "Mon": ["Morning", "Afternoon"], "Sat": ["Evening"], ... }
+    const availability: Record<string, string[]> = {};
+    for (const day of data.availabilityDays) {
+      availability[day] = [...data.availabilityBlocks];
+    }
+
+    // 1. Save profile fields. The backend automatically transitions status from
+    //    incomplete → pending_review once all required fields are present.
+    await apiFetch('/api/volunteer/profile/', {
+      method: 'PATCH',
+      body: {
+        contact_number: data.phone,
+        languages: data.languages,
+        travel_areas: data.areas,
+        availability,
+        about_text: data.about,
+      },
+    });
+
+    // 2. Upload documents via multipart (FormData); must NOT set Content-Type
+    //    manually — the browser adds the correct boundary automatically.
+    async function uploadDoc(file: File, documentType: 'identity' | 'declaration') {
+      const form = new FormData();
+      form.append('document_type', documentType);
+      form.append('file', file);
+      const res = await fetch(`${BASE_URL}/api/volunteer/documents/`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'X-CSRFToken': getCsrfToken() },
+        body: form,
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        const body = text ? (JSON.parse(text) as Record<string, unknown>) : null;
+        throw new ApiError(res.status, (body?.detail as string) || res.statusText, body);
+      }
+    }
+
+    await uploadDoc(files.identityDocument, 'identity');
+    await uploadDoc(files.declarationForm, 'declaration');
+
+    return { status: 'success' };
   },
 
   // --- Volunteers (MOCK) ---------------------------------------------------
@@ -580,6 +610,34 @@ export const api = {
     return apiFetch<StaffMatch>(`/api/staff/matches/${matchId}/end/`, {
       method: 'POST',
     });
+  },
+
+  // --- Audit log (real) ----------------------------------------------------
+  // SECURITY (SR-AUD-02): The audit log is append-only — there is no
+  // create/update/delete here intentionally. GET only.
+  async getAuditLog(params?: {
+    action?: string;
+    target_type?: string;
+    target_id?: string;
+    user_id?: number;
+    timestamp_after?: string;
+    timestamp_before?: string;
+    page?: number;
+    page_size?: number;
+  }): Promise<Paginated<StaffAuditLogEntry>> {
+    const qs = new URLSearchParams();
+    if (params?.action) qs.set('action', params.action);
+    if (params?.target_type) qs.set('target_type', params.target_type);
+    if (params?.target_id) qs.set('target_id', params.target_id);
+    if (params?.user_id) qs.set('user_id', String(params.user_id));
+    if (params?.timestamp_after) qs.set('timestamp_after', params.timestamp_after);
+    if (params?.timestamp_before) qs.set('timestamp_before', params.timestamp_before);
+    if (params?.page && params.page > 1) qs.set('page', String(params.page));
+    if (params?.page_size) qs.set('page_size', String(params.page_size));
+    const query = qs.toString();
+    return apiFetch<Paginated<StaffAuditLogEntry>>(
+      `/api/staff/audit-log/${query ? `?${query}` : ''}`,
+    );
   },
 
   // --- Authenticated document download -------------------------------------

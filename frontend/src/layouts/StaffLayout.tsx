@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { to: '/staff/seniors', label: 'Seniors' },
   { to: '/staff/matches', label: 'Matches' },
   { to: '/staff/sessions', label: 'Sessions' },
+  { to: '/staff/audit-log', label: 'Audit log' },
 ];
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>

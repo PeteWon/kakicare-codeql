@@ -200,8 +200,10 @@ export function StaffDashboard() {
           missedSessions: missed.results,
         });
       } catch (err) {
-        if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
-          setError('Session expired. Please log in again.');
+        if (err instanceof ApiError && err.status === 401) {
+          setError('Your session has expired. Please log in again.');
+        } else if (err instanceof ApiError && err.status === 403) {
+          setError("You don't have permission to view this page.");
         } else {
           setError('Could not load dashboard. Please refresh the page.');
         }

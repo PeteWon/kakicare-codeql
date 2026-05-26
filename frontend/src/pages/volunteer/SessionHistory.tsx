@@ -134,8 +134,10 @@ export function SessionHistory() {
       const data = await api.getVolunteerSessions();
       setSessions(data.results);
     } catch (err) {
-      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
-        setError('Session expired. Please log in again.');
+      if (err instanceof ApiError && err.status === 401) {
+        setError('Your session has expired. Please log in again.');
+      } else if (err instanceof ApiError && err.status === 403) {
+        setError('Sessions are available once your volunteer profile has been approved by staff.');
       } else {
         setError('Could not load your sessions. Please try again.');
       }

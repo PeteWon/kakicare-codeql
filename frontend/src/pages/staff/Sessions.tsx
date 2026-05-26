@@ -23,7 +23,7 @@
 //   missed sessions with a red visual treatment and surfaces the follow-up
 //   action prominently so welfare concerns are not overlooked.
 
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '@/lib/api';
 import type {
@@ -238,8 +238,10 @@ export function Sessions() {
       });
       setResult(data);
     } catch (err) {
-      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
-        setError('Session expired. Please log in again.');
+      if (err instanceof ApiError && err.status === 401) {
+        setError('Your session has expired. Please log in again.');
+      } else if (err instanceof ApiError && err.status === 403) {
+        setError("You don't have permission to view this page.");
       } else {
         setError('Could not load sessions. Please try again.');
       }
@@ -519,10 +521,9 @@ export function Sessions() {
                 </thead>
                 <tbody className="divide-y divide-cream-100">
                   {result.results.map((session) => (
-                    <>
+                    <Fragment key={session.id}>
                       {/* Main data row */}
                       <tr
-                        key={session.id}
                         className={
                           session.status === 'missed'
                             ? 'bg-red-50 hover:bg-red-100'
@@ -604,7 +605,7 @@ export function Sessions() {
 
                       {/* Per-row error */}
                       {rowError?.id === session.id && (
-                        <tr key={`${session.id}-err`}>
+                        <tr>
                           <td
                             colSpan={COL_SPAN}
                             className="bg-red-50 px-4 py-2 text-xs text-red-700"
@@ -616,7 +617,7 @@ export function Sessions() {
 
                       {/* Confirm dialog */}
                       {confirmDialogId === session.id && (
-                        <tr key={`${session.id}-confirm-dialog`}>
+                        <tr>
                           <td
                             colSpan={COL_SPAN}
                             className="bg-primary-50 px-4 py-3"
@@ -659,7 +660,7 @@ export function Sessions() {
 
                       {/* Cancel form */}
                       {cancelFormId === session.id && (
-                        <tr key={`${session.id}-cancel-form`}>
+                        <tr>
                           <td
                             colSpan={COL_SPAN}
                             className="bg-red-50 px-4 py-3"
@@ -711,7 +712,7 @@ export function Sessions() {
 
                       {/* Follow-up form (welfare concern — missed session) */}
                       {followupFormId === session.id && (
-                        <tr key={`${session.id}-followup-form`}>
+                        <tr>
                           <td
                             colSpan={COL_SPAN}
                             className="bg-red-50 px-4 py-3"
@@ -782,7 +783,7 @@ export function Sessions() {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   ))}
                 </tbody>
               </table>

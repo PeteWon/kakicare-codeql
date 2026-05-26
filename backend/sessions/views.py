@@ -179,6 +179,30 @@ class VolunteerSessionListCreateView(_SessionAuditMixin, APIView):
         except Match.DoesNotExist:
             return Response(status=status.HTTP_404_NOT_FOUND)
 
+        # Reject overlapping bookings for the same volunteer. Two intervals
+        # overlap iff a.start < b.end AND a.end > b.start. Cancelled and missed
+        # sessions are excluded since they no longer occupy the calendar.
+        overlap = (
+            Session.objects
+            .filter(
+                match__volunteer=request.user,
+                scheduled_start__lt=data['scheduled_end'],
+                scheduled_end__gt=data['scheduled_start'],
+            )
+            .exclude(status__in=[
+                Session.Status.CANCELLED,
+                Session.Status.MISSED,
+            ])
+            .exists()
+        )
+        if overlap:
+            return Response(
+                {'non_field_errors': [
+                    'This time overlaps with another of your sessions.'
+                ]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         session = Session.objects.create(
             match=match,
             session_type=data['session_type'],

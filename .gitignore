@@ -11,12 +11,26 @@ dist
 dist-ssr
 *.local
 
+# Vite dev/dep cache (created by `vite dev`/`vite build`)
+.vite/
+
 # TypeScript incremental build cache
 *.tsbuildinfo
+
+# Generated outputs from `tsc` against root configs (the project does not emit
+# these — keep them ignored so they cannot be accidentally re-committed).
+vite.config.d.ts
+vite.config.js
 
 # Local env files (never commit real secrets)
 .env
 .env.*.local
+
+# Uploaded volunteer documents (Django MEDIA_ROOT). These are PII (identity
+# documents, declaration forms) and MUST never be committed. The directory
+# stays in the working tree on developer machines; only its contents are
+# ignored. Production deployments use a separate, mounted volume.
+private_media/
 
 # Editor / OS
 .DS_Store

@@ -246,9 +246,11 @@ export function SeniorForm() {
           }
         }
         setSubmitError(
-          err.status === 401 || err.status === 403
-            ? 'Session expired. Please log in again.'
-            : 'Something went wrong. Please try again.',
+          err.status === 401
+            ? 'Your session has expired. Please log in again.'
+            : err.status === 403
+              ? "You don't have permission to do that."
+              : 'Something went wrong. Please try again.',
         );
       } else {
         setSubmitError('Something went wrong. Please try again.');

@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Button, Card, FileUpload, MultiSelect, TextField } from '@/components';
 import { api } from '@/lib/api';
 import { phoneSG, required, validate } from '@/lib/validation';
-import type { Region, TimeBlock, Weekday } from '@/lib/types';
+import type { ApplicationStatus, Region, TimeBlock, Weekday } from '@/lib/types';
 
 // Volunteer profile completion.
 //
@@ -36,7 +36,53 @@ const DOC_ACCEPT = 'image/jpeg,image/png,application/pdf';
 const DOC_ACCEPT_LABEL = 'JPG, PNG or PDF';
 const ABOUT_MAX = 500;
 
+// ---------------------------------------------------------------------------
+// Status display
+// ---------------------------------------------------------------------------
+
+const STATUS_CONTENT: Record<
+  Exclude<ApplicationStatus, 'incomplete' | 'changes_requested'>,
+  { heading: string; body: string; colour: string }
+> = {
+  pending_review: {
+    heading: 'Your application is under review',
+    body: "Thanks for submitting your profile! Our team will review it shortly. We'll send you an email once a decision has been made. In the meantime there's nothing else you need to do.",
+    colour: 'text-amber-700',
+  },
+  approved: {
+    heading: 'Your application has been approved',
+    body: "Congratulations! You're now a verified KakiCare volunteer. A staff member will propose a match when a suitable senior is available.",
+    colour: 'text-green-700',
+  },
+  rejected: {
+    heading: 'Your application was not approved',
+    body: "Unfortunately we weren't able to approve your application at this time. If you have questions, please reach out to the KakiCare team.",
+    colour: 'text-red-700',
+  },
+};
+
+function StatusDisplay({ status }: { status: Exclude<ApplicationStatus, 'incomplete' | 'changes_requested'> }) {
+  const { heading, body, colour } = STATUS_CONTENT[status];
+  return (
+    <section className="mx-auto max-w-2xl">
+      <Card className="text-center py-4">
+        <h1 className={`text-2xl font-semibold ${colour}`}>{heading}</h1>
+        <p className="mt-3 text-primary-600">{body}</p>
+      </Card>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Profile form
+// ---------------------------------------------------------------------------
+
 export function CompleteProfile() {
+  type PageState = 'loading' | 'form' | 'status' | 'load_error';
+  const [pageState, setPageState] = useState<PageState>('loading');
+  const [appStatus, setAppStatus] = useState<ApplicationStatus>('incomplete');
+  const [changesRequested, setChangesRequested] = useState(false);
+
   const [phone, setPhone] = useState('');
   const [languages, setLanguages] = useState<string[]>([]);
   const [areas, setAreas] = useState<Region[]>([]);
@@ -51,23 +97,39 @@ export function CompleteProfile() {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
+  useEffect(() => {
+    api.getVolunteerProfile()
+      .then((profile) => {
+        const s = profile.application_status;
+        if (s === 'incomplete' || s === 'changes_requested') {
+          // Pre-populate from any previously saved data.
+          if (profile.contact_number) setPhone(profile.contact_number);
+          if (profile.languages?.length) setLanguages(profile.languages);
+          if (profile.travel_areas?.length) setAreas(profile.travel_areas as Region[]);
+          if (profile.about_text) setAbout(profile.about_text);
+          setChangesRequested(s === 'changes_requested');
+          setPageState('form');
+        } else {
+          setAppStatus(s);
+          setPageState('status');
+        }
+      })
+      .catch(() => {
+        setPageState('load_error');
+      });
+  }, []);
+
   function buildErrors() {
-    const next: Record<string, string | null> = {
+    return {
       phone: validate(phone, [required('Contact number'), phoneSG()]),
       languages: languages.length === 0 ? 'Please select at least one language.' : null,
       areas: areas.length === 0 ? 'Please select at least one area.' : null,
-      days:
-        days.length === 0 ? 'Please select at least one day you are available.' : null,
-      blocks:
-        blocks.length === 0 ? 'Please select at least one time block.' : null,
-      about:
-        about.length > ABOUT_MAX
-          ? `Please keep this under ${ABOUT_MAX} characters.`
-          : null,
+      days: days.length === 0 ? 'Please select at least one day you are available.' : null,
+      blocks: blocks.length === 0 ? 'Please select at least one time block.' : null,
+      about: about.length > ABOUT_MAX ? `Please keep this under ${ABOUT_MAX} characters.` : null,
       identityDoc: identityDoc ? null : 'Please upload your identity document.',
       declarationDoc: declarationDoc ? null : 'Please upload your signed declaration form.',
     };
-    return next;
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -78,7 +140,6 @@ export function CompleteProfile() {
     setErrors(next);
     if (Object.values(next).some(Boolean)) return;
 
-    // Files are guaranteed by the checks above; assert for the type system.
     if (!identityDoc || !declarationDoc) return;
 
     setSubmitting(true);
@@ -99,6 +160,40 @@ export function CompleteProfile() {
     }
   }
 
+  // --- Loading ---
+  if (pageState === 'loading') {
+    return (
+      <div className="flex justify-center py-16">
+        <span
+          role="status"
+          aria-label="Loading…"
+          className="h-10 w-10 animate-spin rounded-full border-4 border-primary-100 border-t-primary-500"
+        />
+      </div>
+    );
+  }
+
+  // --- Load error ---
+  if (pageState === 'load_error') {
+    return (
+      <section className="mx-auto max-w-2xl">
+        <Card>
+          <p className="text-sm text-red-600">Could not load your profile. Please refresh the page.</p>
+        </Card>
+      </section>
+    );
+  }
+
+  // --- Status-only display (pending / approved / rejected) ---
+  if (pageState === 'status') {
+    return (
+      <StatusDisplay
+        status={appStatus as Exclude<ApplicationStatus, 'incomplete' | 'changes_requested'>}
+      />
+    );
+  }
+
+  // --- Post-submit confirmation (within the same session) ---
   if (submitted) {
     return (
       <section className="mx-auto max-w-2xl">
@@ -118,6 +213,7 @@ export function CompleteProfile() {
     );
   }
 
+  // --- Form (incomplete or changes_requested) ---
   return (
     <section className="mx-auto max-w-2xl">
       <h1 className="text-2xl font-semibold text-primary-900">Complete your profile</h1>
@@ -125,6 +221,16 @@ export function CompleteProfile() {
         Tell us a little about yourself and upload your documents so our team can
         review your application.
       </p>
+
+      {changesRequested && (
+        <div
+          role="alert"
+          className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800"
+        >
+          A staff member has requested changes to your profile. Please update the
+          information below and resubmit.
+        </div>
+      )}
 
       <form className="mt-6 space-y-6" onSubmit={handleSubmit} noValidate>
         {formError ? (

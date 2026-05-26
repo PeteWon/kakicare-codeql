@@ -1,6 +1,8 @@
 // SECURITY NOTE: Route protection here is UX only. The backend enforces real
 // authorisation on every API endpoint. The backend also rejects bookings for
-// non-active matches and any overlap with existing sessions (SR-AUTHZ-02).
+// non-active matches and rejects time ranges that overlap any of the same
+// volunteer's existing sessions (SR-AUTHZ-02). Overlap errors come back as a
+// 400 with non_field_errors; the handler below surfaces them to the user.
 // Client-side validation below is for usability only.
 
 import type { FormEvent } from 'react';

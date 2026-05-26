@@ -36,11 +36,38 @@ function SearchableSelect({
   disabled?: boolean;
   error?: string;
 }) {
+  const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
+
+  const selected = options.find((o) => o.id === value) ?? null;
   const filtered = options.filter((o) =>
     o.label.toLowerCase().includes(search.toLowerCase()),
   );
   const visibleRows = Math.min(Math.max(filtered.length, 1), 7);
+
+  // When an item is confirmed, collapse the picker.
+  function pick(optId: number) {
+    onChange(optId);
+    setOpen(false);
+    setSearch('');
+  }
+
+  // Show selected state when something is chosen and picker is closed.
+  if (selected && !open) {
+    return (
+      <div className="flex items-center justify-between rounded-xl border border-primary-200 bg-primary-50 px-3 py-2">
+        <span className="text-sm font-medium text-primary-900">{selected.label}</span>
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => setOpen(true)}
+          className="ml-3 shrink-0 text-xs text-primary-500 hover:text-primary-700 disabled:opacity-50"
+        >
+          Change
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-1">
@@ -50,6 +77,7 @@ function SearchableSelect({
         onChange={(e) => setSearch(e.target.value)}
         placeholder={`Search ${placeholder}…`}
         disabled={disabled}
+        autoFocus={open}
         className="block w-full rounded-xl border border-cream-300 bg-white px-3 py-2 text-sm text-primary-900 placeholder:text-primary-300 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-60"
       />
       {/* Native <select size={n}> acts as a visible listbox. */}
@@ -57,19 +85,15 @@ function SearchableSelect({
         id={id}
         size={visibleRows}
         value={value ?? ''}
-        onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)}
+        onChange={(e) => { if (e.target.value) pick(Number(e.target.value)); }}
         disabled={disabled}
         className="block w-full rounded-xl border border-cream-300 bg-white px-3 py-1 text-sm text-primary-900 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-60"
       >
         {filtered.length === 0 ? (
-          <option value="" disabled>
-            No results
-          </option>
+          <option value="" disabled>No results</option>
         ) : (
           filtered.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.label}
-            </option>
+            <option key={o.id} value={o.id}>{o.label}</option>
           ))
         )}
       </select>
@@ -116,7 +140,7 @@ export function ProposeMatch() {
 
       setVolunteers(
         appRes.results.map((a) => ({
-          id: a.id,
+          id: a.user_id,   // backend expects User.id, not VolunteerProfile.id
           label: `${a.user_full_name} (${a.user_email})`,
         })),
       );
@@ -164,9 +188,11 @@ export function ProposeMatch() {
         setSubmitError(
           err.status === 400 && detail
             ? detail
-            : err.status === 401 || err.status === 403
-              ? 'Session expired. Please log in again.'
-              : 'Something went wrong. Please try again.',
+            : err.status === 401
+              ? 'Your session has expired. Please log in again.'
+              : err.status === 403
+                ? "You don't have permission to do that."
+                : 'Something went wrong. Please try again.',
         );
       } else {
         setSubmitError('Something went wrong. Please try again.');

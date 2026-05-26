@@ -111,8 +111,10 @@ export function SeniorDetail() {
       setSenior(data);
     } catch (err) {
       if (err instanceof ApiError && err.status === 404) setNotFound(true);
-      else if (err instanceof ApiError && (err.status === 401 || err.status === 403))
-        setError('Session expired. Please log in again.');
+      else if (err instanceof ApiError && err.status === 401)
+        setError('Your session has expired. Please log in again.');
+      else if (err instanceof ApiError && err.status === 403)
+        setError("You don't have permission to view this senior.");
       else setError('Could not load senior. Please try again.');
     } finally {
       setLoading(false);

@@ -4,9 +4,25 @@ KakiCare is an internal coordination platform for an elderly **befriending progr
 Singapore, built for ICT2216 Secure Software Development (Team 18). Vetted community
 **volunteers** are matched with **seniors** to visit or call them, while **staff** manage
 volunteer applications, senior records, matches, and an audit log. Seniors are records
-managed by staff and never log in. This repository is a monorepo: the **frontend** lives at
-the root and the Django **backend** lives in `backend/`. The frontend talks to the backend
-over a typed API layer.
+managed by staff and never log in.
+
+This repository is a monorepo with two sibling apps:
+
+- `frontend/` — React 18 + TypeScript + Vite single-page app.
+- `backend/` — Django + Django REST Framework + PostgreSQL.
+
+The frontend talks to the backend over a typed API layer.
+
+## Repository layout
+
+```
+.
+├── frontend/          React SPA (Vite, Tailwind, React Router)
+├── backend/           Django + DRF API + Postgres migrations
+├── private_media/     Uploaded volunteer documents (Django MEDIA_ROOT, outside web root)
+├── docker-compose.yml Local Postgres container
+└── README.md
+```
 
 ## Tech stack
 
@@ -23,18 +39,18 @@ implemented in-house (no OAuth / third-party auth library).
 
 - **Node.js 18+** (developed on Node 20+) and npm.
 
-## Run locally
+## Frontend — running locally
 
 ```bash
 git clone https://github.com/Brxndxnnnn/ICT2216-TEAM-18-SSD.git
-cd ICT2216-TEAM-18-SSD
+cd ICT2216-TEAM-18-SSD/frontend
 npm install
 npm run dev
 ```
 
 The dev server prints a local URL (default <http://localhost:5173>).
 
-### Other scripts
+### Other scripts (all from `frontend/`)
 
 - `npm run build` — type-check and produce a production build in `dist/`.
 - `npm run preview` — serve the production build locally.
@@ -43,16 +59,12 @@ The dev server prints a local URL (default <http://localhost:5173>).
 ## Configuration
 
 The backend base URL is controlled by the `VITE_API_BASE_URL` environment variable. It
-defaults to `http://localhost:8000` if unset. To override it, copy `.env.example` to `.env`
-and adjust:
+defaults to `http://localhost:8000` if unset. To override it, copy `frontend/.env.example`
+to `frontend/.env` and adjust:
 
 ```bash
 VITE_API_BASE_URL=http://localhost:8000
 ```
-
-> The API layer (`src/lib/api.ts`) currently returns mock data so the frontend runs before
-> the backend exists. Each function is marked `// MOCK` with the real call commented above
-> it; see the migration plan at the top of that file.
 
 ## Backend — running locally
 

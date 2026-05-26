@@ -27,4 +27,5 @@ urlpatterns = [
     path('api/staff/', include('seniors.staff_urls')),
     path('api/staff/', include('matching.staff_urls')),
     path('api/staff/', include('sessions.staff_urls')),
+    path('api/staff/', include('audit.urls')),
 ]

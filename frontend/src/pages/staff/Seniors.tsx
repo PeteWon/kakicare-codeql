@@ -52,8 +52,12 @@ export function Seniors() {
       const data = await api.getSeniors(params);
       setResult(data);
     } catch (err) {
-      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
-        setError('Session expired. Please log in again.');
+      if (err instanceof ApiError && err.status === 401) {
+        setError('Your session has expired. Please log in again.');
+      } else if (err instanceof ApiError && err.status === 403) {
+        setError("You don't have permission to view this page.");
+      } else if (err instanceof ApiError && err.status === 429) {
+        setError('Too many requests. Please wait a moment and try again.');
       } else {
         setError('Could not load seniors. Please try again.');
       }

@@ -62,8 +62,10 @@ export function Applications() {
       const data = await api.getStaffApplications(statusFilter, currentPage);
       setResult(data);
     } catch (err) {
-      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
-        setError('Session expired. Please log in again.');
+      if (err instanceof ApiError && err.status === 401) {
+        setError('Your session has expired. Please log in again.');
+      } else if (err instanceof ApiError && err.status === 403) {
+        setError("You don't have permission to view this page.");
       } else {
         setError('Could not load applications. Please try again.');
       }

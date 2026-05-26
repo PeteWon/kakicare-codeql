@@ -189,8 +189,19 @@ export function Login() {
         return;
       }
       setSetupCodeError(GENERIC_MFA_ERROR);
-    } catch {
-      setFormError('Something went wrong. Please try again.');
+    } catch (err) {
+      // 5-minute mid-login window can elapse during MFA setup — surface a clear
+      // recovery path back to credentials rather than leaving the user stuck.
+      if (err instanceof ApiError && err.status === 401) {
+        setStep('credentials');
+        setSetupData(null);
+        setSetupCode('');
+        setSetupCodeError(null);
+        setBackupsAcknowledged(false);
+        setFormError('Your sign-in window has expired. Please sign in again.');
+      } else {
+        setFormError('Something went wrong. Please try again.');
+      }
     } finally {
       setSubmitting(false);
     }

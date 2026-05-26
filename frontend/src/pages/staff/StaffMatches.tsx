@@ -6,7 +6,7 @@
 // - Any senior-identifying data shown here is governed by the backend's
 //   data-minimisation serialiser — do not extend types expecting contact fields.
 
-import { useCallback, useEffect, useState } from 'react';
+import { Fragment, useCallback, useEffect, useState } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '@/lib/api';
 import type { Paginated, StaffMatch, StaffMatchStatus } from '@/lib/types';
@@ -103,8 +103,10 @@ export function StaffMatches() {
       });
       setResult(data);
     } catch (err) {
-      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
-        setError('Session expired. Please log in again.');
+      if (err instanceof ApiError && err.status === 401) {
+        setError('Your session has expired. Please log in again.');
+      } else if (err instanceof ApiError && err.status === 403) {
+        setError("You don't have permission to view this page.");
       } else {
         setError('Could not load matches. Please try again.');
       }
@@ -245,23 +247,20 @@ export function StaffMatches() {
                 </thead>
                 <tbody className="divide-y divide-cream-100">
                   {result.results.map((match) => (
-                    <>
-                      <tr key={match.id} className="hover:bg-cream-50">
+                    <Fragment key={match.id}>
+                      <tr className="hover:bg-cream-50">
                         {/* Volunteer */}
                         <td className="px-4 py-3">
                           <p className="text-sm font-medium text-primary-900">
-                            {match.volunteer.full_name}
+                            {match.volunteer_full_name}
                           </p>
-                          <p className="text-xs text-primary-400">{match.volunteer.email}</p>
+                          <p className="text-xs text-primary-400">{match.volunteer_email}</p>
                         </td>
 
                         {/* Senior */}
                         <td className="px-4 py-3">
                           <p className="text-sm font-medium text-primary-900">
-                            {match.senior.full_name}
-                          </p>
-                          <p className="text-xs text-primary-400">
-                            {match.senior.preferred_language}
+                            {match.senior_full_name}
                           </p>
                         </td>
 
@@ -324,7 +323,7 @@ export function StaffMatches() {
 
                       {/* Per-row error */}
                       {rowError?.id === match.id && (
-                        <tr key={`${match.id}-err`}>
+                        <tr>
                           <td
                             colSpan={6}
                             className="bg-red-50 px-4 py-2 text-xs text-red-700"
@@ -336,7 +335,7 @@ export function StaffMatches() {
 
                       {/* Inline end-match confirmation */}
                       {confirmEndId === match.id && (
-                        <tr key={`${match.id}-confirm`}>
+                        <tr>
                           <td
                             colSpan={6}
                             className="bg-red-50 px-4 py-3"
@@ -344,8 +343,8 @@ export function StaffMatches() {
                             <div className="flex flex-wrap items-center gap-3">
                               <p className="text-sm text-red-800">
                                 End this match between{' '}
-                                <strong>{match.volunteer.full_name}</strong> and{' '}
-                                <strong>{match.senior.full_name}</strong>? This cannot be
+                                <strong>{match.volunteer_full_name}</strong> and{' '}
+                                <strong>{match.senior_full_name}</strong>? This cannot be
                                 undone.
                               </p>
                               <div className="flex gap-2">
@@ -366,7 +365,7 @@ export function StaffMatches() {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   ))}
                 </tbody>
               </table>

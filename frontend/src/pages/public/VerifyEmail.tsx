@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Button, Card } from '@/components';
 import { api } from '@/lib/api';
@@ -23,6 +23,11 @@ type Status = 'loading' | 'success' | 'error';
 export function VerifyEmail() {
   const [searchParams] = useSearchParams();
   const [status, setStatus] = useState<Status>('loading');
+  // Guard against React StrictMode's double-invocation of effects in development.
+  // StrictMode mounts → unmounts → remounts each component; without this, two
+  // POST requests would fire for the same token, the first marking it used and
+  // the second returning 400. useRef survives the StrictMode remount cycle.
+  const hasVerified = useRef(false);
 
   useEffect(() => {
     const token = searchParams.get('token');
@@ -33,20 +38,17 @@ export function VerifyEmail() {
       return;
     }
 
-    let active = true;
+    if (hasVerified.current) return;
+    hasVerified.current = true;
+
     api
       .verifyEmail(token)
       .then((result) => {
-        if (!active) return;
         setStatus(result.status === 'success' ? 'success' : 'error');
       })
       .catch(() => {
-        if (active) setStatus('error');
+        setStatus('error');
       });
-
-    return () => {
-      active = false;
-    };
   }, [searchParams]);
 
   return (

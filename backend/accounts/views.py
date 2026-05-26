@@ -313,7 +313,16 @@ class MFASetupView(APIView):
         # until a new device is confirmed, so the user never loses MFA access
         # mid-setup if they restart the flow.
         TOTPDevice.objects.filter(user=user, confirmed=False).delete()
-        user.mfa_backup_codes.all().delete()
+        # Backup codes belong to the user, not a specific device. Wiping them on
+        # every setup call would strand a user who already has a confirmed device
+        # and valid codes if they bail mid-flow. Only clear when no confirmed
+        # device exists — i.e. any existing codes are leftovers from an abandoned
+        # initial setup, never delivered to the user.
+        has_confirmed_device = TOTPDevice.objects.devices_for_user(
+            user, confirmed=True
+        ).exists()
+        if not has_confirmed_device:
+            user.mfa_backup_codes.all().delete()
 
         device = TOTPDevice.objects.create(
             user=user,
