@@ -1,0 +1,17 @@
+# Never copy secrets, virtualenvs, or local-only files into the image.
+.env
+.env.*
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.log
+.git
+.gitignore
+.idea/
+.vscode/
+.pytest_cache/
+htmlcov/
+.coverage
+staticfiles/
+private_media/

@@ -1,0 +1,32 @@
+# Local development: a SINGLE PostgreSQL container for the KakiCare backend.
+#
+# Django runs natively on the host (not containerised yet) and connects to this
+# database at localhost:5432. The full stack (Django, Nginx, etc.) will be
+# containerised later at deployment time — for now this is Postgres only.
+
+services:
+  db:
+    image: postgres:16  # pinned major version (not :latest)
+    container_name: kakicare-postgres
+    restart: unless-stopped
+    # Reuse the SAME .env file the Django app uses so the DB name/user/password
+    # live in exactly one place. Postgres reads POSTGRES_DB / POSTGRES_USER /
+    # POSTGRES_PASSWORD and simply ignores the other variables in the file.
+    env_file:
+      - ./backend/.env
+    ports:
+      # Bind to loopback ONLY — the database is never reachable beyond this
+      # machine. (Without the 127.0.0.1 prefix Docker would publish on 0.0.0.0.)
+      - "127.0.0.1:5432:5432"
+    volumes:
+      # Named volume → data persists across container restarts and recreations.
+      - kakicare_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # `$$` escapes to a literal `$` so the container shell expands the vars.
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  kakicare_pgdata:

@@ -1,0 +1,32 @@
+# KakiCare backend — pinned dependencies.
+# Regenerate after adding a package: pip install <pkg> && pip freeze > requirements.txt
+#
+# Direct dependencies:
+#   Django                 web framework
+#   djangorestframework    REST API layer
+#   django-cors-headers    CORS for the React SPA (different port in dev)
+#   argon2-cffi            Argon2id password hashing (default hasher)
+#   django-otp             TOTP MFA support (installed; no MFA logic yet)
+#   django-environ         load settings/secrets from environment / .env
+#   psycopg[binary]        PostgreSQL driver
+#   gunicorn               production WSGI server (only used in Docker prod image)
+
+Django==5.2.14
+djangorestframework==3.17.1
+django-cors-headers==4.9.0
+argon2-cffi==25.1.0
+django-otp==1.7.0
+django-environ==0.13.0
+psycopg[binary]==3.3.4
+gunicorn==23.0.0
+
+# --- transitive (pinned for reproducible builds) ---
+argon2-cffi-bindings==25.1.0
+asgiref==3.11.1
+cffi==2.0.0
+packaging==24.2
+psycopg==3.3.4
+pycparser==3.0
+sqlparse==0.5.5
+typing_extensions==4.15.0
+tzdata==2026.2

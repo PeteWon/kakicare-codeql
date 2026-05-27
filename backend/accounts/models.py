@@ -1,0 +1,153 @@
+"""Account models: the custom User and the hashed one-time-token models.
+
+We implement authentication ourselves (no OAuth / third-party provider). Email
+is the unique login identifier; there is no username.
+"""
+
+from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
+from django.db import models
+from django.utils import timezone
+
+
+class UserManager(BaseUserManager):
+    """Manager for the email-based custom User (no username field)."""
+
+    use_in_migrations = True
+
+    def _create_user(self, email, password, **extra_fields):
+        if not email:
+            raise ValueError('An email address is required.')
+        # Normalize the domain part to avoid trivial duplicate accounts.
+        email = self.normalize_email(email)
+        user = self.model(email=email, **extra_fields)
+        # set_password hashes with the configured Argon2id hasher; the raw
+        # password is never stored.
+        user.set_password(password)
+        user.save(using=self._db)
+        return user
+
+    def create_user(self, email, password=None, **extra_fields):
+        extra_fields.setdefault('role', User.Role.VOLUNTEER)
+        extra_fields.setdefault('is_staff', False)
+        extra_fields.setdefault('is_superuser', False)
+        return self._create_user(email, password, **extra_fields)
+
+    def create_superuser(self, email, password=None, **extra_fields):
+        extra_fields.setdefault('role', User.Role.STAFF)
+        extra_fields.setdefault('is_staff', True)
+        extra_fields.setdefault('is_superuser', True)
+        extra_fields.setdefault('is_active', True)
+        extra_fields.setdefault('is_email_verified', True)
+        if extra_fields.get('is_staff') is not True:
+            raise ValueError('Superuser must have is_staff=True.')
+        if extra_fields.get('is_superuser') is not True:
+            raise ValueError('Superuser must have is_superuser=True.')
+        return self._create_user(email, password, **extra_fields)
+
+
+class User(AbstractBaseUser, PermissionsMixin):
+    """A KakiCare account. Either a volunteer or a staff member.
+
+    Seniors are NOT users — they never authenticate (see seniors app).
+    """
+
+    class Role(models.TextChoices):
+        VOLUNTEER = 'volunteer', 'Volunteer'
+        STAFF = 'staff', 'Staff'
+
+    email = models.EmailField(unique=True)
+    full_name = models.CharField(max_length=255)
+    role = models.CharField(max_length=20, choices=Role.choices, default=Role.VOLUNTEER)
+
+    # is_active gates login. New volunteers stay inactive until email is verified
+    # and (per process) staff approval — enforced in business logic later.
+    is_active = models.BooleanField(default=False)
+    # Whether the user has confirmed their email via a verification token.
+    is_email_verified = models.BooleanField(default=False)
+
+    # is_staff controls Django-admin access; distinct from the app 'staff' role.
+    is_staff = models.BooleanField(default=False)
+
+    date_joined = models.DateTimeField(default=timezone.now)
+
+    objects = UserManager()
+
+    USERNAME_FIELD = 'email'
+    REQUIRED_FIELDS = ['full_name']  # prompted by createsuperuser besides email/password
+
+    def __str__(self):
+        return self.email
+
+
+class _HashedToken(models.Model):
+    """Abstract base for single-use, time-limited tokens.
+
+    SECURITY: only a hash of the token is ever stored. The raw token is sent to
+    the user (e.g. emailed) and never persisted — a database leak must not allow
+    an attacker to use outstanding tokens. Lookups hash the presented token and
+    compare against token_hash.
+    """
+
+    token_hash = models.CharField(max_length=128, unique=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        abstract = True
+
+    def is_valid(self):
+        return self.used_at is None and self.expires_at > timezone.now()
+
+
+class EmailVerificationToken(_HashedToken):
+    """Token emailed to a new user to confirm their email address.
+
+    The raw token is emailed; only its hash is stored here (see _HashedToken).
+    """
+
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name='email_verification_tokens'
+    )
+
+    def __str__(self):
+        return f'EmailVerificationToken(user={self.user_id})'
+
+
+class PasswordResetToken(_HashedToken):
+    """Token emailed to a user to reset their password.
+
+    The raw token is emailed; only its hash is stored here (see _HashedToken).
+    """
+
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name='password_reset_tokens'
+    )
+
+    def __str__(self):
+        return f'PasswordResetToken(user={self.user_id})'
+
+
+class MFABackupCode(models.Model):
+    """Single-use recovery code for TOTP MFA.
+
+    SECURITY: only the SHA-256 hash of the raw code is stored. The raw codes
+    are returned exactly once at MFA enrolment (via mfa/setup) and never
+    persisted — a database leak cannot expose valid backup codes.
+    """
+
+    user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name='mfa_backup_codes'
+    )
+    # SHA-256 hex digest (64 chars)
+    code_hash = models.CharField(max_length=64, db_index=True)
+    used_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['user', 'used_at']),
+        ]
+
+    def __str__(self):
+        return f'MFABackupCode(user={self.user_id}, used={self.used_at is not None})'
