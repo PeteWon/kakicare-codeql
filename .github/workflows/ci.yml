@@ -99,7 +99,6 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     environment:
       name: production
-      url: http://${{ secrets.EC2_HOST }}/
 
     steps:
       - name: Configure SSH
