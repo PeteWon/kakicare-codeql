@@ -21,6 +21,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN apt-get update \
     && apt-get install --no-install-recommends -y \
         libpq5 \
+        gosu \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -32,19 +33,17 @@ RUN pip install -r requirements.txt
 # Copy source after deps so editing code doesn't bust the deps layer.
 COPY . .
 
-# Non-root user (UID 1000 — convention; matches host user mounts cleanly).
+# Non-root user (UID 1000). The container starts as root so the entrypoint
+# can fix volume ownership (Docker volumes may be initialized by any service
+# that mounts them first), then drops to app via gosu for the long-running
+# gunicorn process.
 RUN useradd --create-home --uid 1000 --shell /bin/bash app \
     && mkdir -p /app/staticfiles /app/private_media \
-    && chown -R app:app /app
-USER app
+    && chmod +x /app/entrypoint.sh
 
 EXPOSE 8000
 
-# Gunicorn: 3 workers is sane for a small EC2 (t2.micro / t3.micro class).
-# Adjust --workers up if the instance has more cores. The migrate/collectstatic
-# steps run in docker-compose.prod.yml's command, not here, so this image can
-# be re-used for one-off tasks (e.g. `docker compose run web python manage.py
-# createsuperuser`) without forcing a migration.
+ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["gunicorn", "kakicare.wsgi:application", \
      "--bind", "0.0.0.0:8000", \
      "--workers", "3", \
