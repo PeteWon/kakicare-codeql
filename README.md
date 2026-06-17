@@ -35,6 +35,35 @@ Dependencies are kept intentionally minimal — no UI component library, state-m
 library, or form library — so the team can understand and defend its own code. Auth is
 implemented in-house (no OAuth / third-party auth library).
 
+## Team onboarding (start here)
+
+New to the repo? You need **no production secrets** to develop locally — not the
+EC2 key, not the prod `.env`, not the SMTP or deploy credentials. You create one
+local secrets file (`backend/.env`) and run two processes.
+
+1. **Install** Node 18+ (20 recommended), Python 3.11+ (3.13 to match prod),
+   Docker Desktop (for the local Postgres container), and git.
+2. **Create `backend/.env`** (gitignored) from the template and set two values:
+   ```bash
+   cd backend && cp .env.example .env      # PowerShell: Copy-Item .env.example .env
+   ```
+   - `SECRET_KEY=` → generate: `python -c "from django.core.management.utils import get_random_secret_key as g; print(g())"`
+   - `POSTGRES_PASSWORD=` → any local password.
+
+   Everything else is dev-ready as shipped (`DEBUG=True`, `POSTGRES_HOST=localhost`,
+   and the console email backend — verification/reset emails print to the terminal,
+   no SMTP needed). `frontend/.env` is optional (defaults to `http://localhost:8000`).
+3. **Run it** (detailed steps in [Backend](#backend--running-locally) and
+   [Frontend](#frontend--running-locally) below): `docker compose up -d` for Postgres,
+   then Django (`migrate` + `runserver`) and the Vite dev server (`npm run dev`).
+
+**Before your first PR:** branch off `develop` (not `main`), commit under your own
+GitHub identity, and open the PR into `develop`. See
+[Branching & contribution workflow](#branching--contribution-workflow).
+
+Gitignored / never committed: `backend/.env`, `frontend/.env`, `node_modules/`,
+`dist/`, `private_media/` (uploaded PII), `.venv/`.
+
 ## Prerequisites
 
 - **Node.js 18+** (developed on Node 20+) and npm.
