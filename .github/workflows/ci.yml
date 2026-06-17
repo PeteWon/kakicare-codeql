@@ -38,6 +38,14 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Dependency vulnerability scan (D2 dependency-check evidence). Report-only
+      # for now (continue-on-error) so a transitive advisory we can't immediately
+      # fix doesn't block the team's pipeline; findings still show in the logs.
+      # Tighten to blocking by removing continue-on-error once the tree is clean.
+      - name: Dependency audit (npm)
+        continue-on-error: true
+        run: npm audit --audit-level=high
+
       - name: Type-check (tsc --noEmit)
         run: npm run lint
 
@@ -85,6 +93,16 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements.txt
+
+      # Dependency vulnerability scan (D2 dependency-check evidence). pip-audit
+      # checks our pinned requirements against the Python advisory database.
+      # Report-only for now (continue-on-error); findings still show in the logs.
+      # Tighten to blocking by removing continue-on-error once the tree is clean.
+      - name: Dependency audit (pip-audit)
+        continue-on-error: true
+        run: |
+          pip install pip-audit
+          pip-audit -r requirements.txt
 
       - name: Django system check
         run: python manage.py check
