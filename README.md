@@ -236,4 +236,62 @@ git checkout <commit-sha>
 docker compose -f docker-compose.prod.yml up -d --build
 ```
 
+## Branching & contribution workflow
+
+We use a two-tier model: a long-lived integration branch (`develop`) and a
+production release branch (`main`).
+
+```
+feature/*  ──PR──▶  develop      CI runs · NO deploy   ← all day-to-day work lands here
+develop    ──PR──▶  main          CI runs on the PR
+merge to main (push)             ──▶  auto-deploy to EC2   ← the ONLY thing that touches prod
+```
+
+- **`main`** — always reflects exactly what is live on the EC2. A merge here
+  triggers the deploy job. Protected; never push directly.
+- **`develop`** — integration branch and repo default. All completed features
+  merge here first. Tested by CI but never deployed.
+- **`feature/*`** (also `fix/*`, `chore/*`) — short-lived branches off `develop`.
+
+Only a push (merge) to `main` deploys — the deploy job in
+`.github/workflows/ci.yml` is gated on
+`github.ref == 'refs/heads/main' && github.event_name == 'push'`. Everything
+else runs the test jobs only.
+
+### Day-to-day
+
+```bash
+git checkout develop && git pull
+git checkout -b feature/my-thing
+# ...work, commit...
+git push -u origin feature/my-thing
+# Open PR  feature/my-thing → develop, get it green + reviewed, merge.
+```
+
+To ship, open a release PR `develop → main`; merging it deploys to the EC2.
+
+> ⚠️ **New environment variables do not deploy automatically.** `backend/.env`
+> lives only on the EC2 and is never overwritten by a deploy. If your change
+> reads a new env var, someone with EC2 access must add it there *before* the
+> deploy, or the `web` container will crash on boot. Coordinate in the release PR.
+
+### Branch protection
+
+`main` and `develop` are protected by GitHub Rulesets (Settings → Rules →
+Rulesets): a PR is required, the `Frontend lint + build` and
+`Backend check + tests` checks must pass, and force-pushes / deletions are
+blocked. `main` additionally requires one approving review.
+
+## Possible future improvements
+
+- **Registry-based deploys.** Today the EC2 builds Docker images during deploy
+  (`up -d --build`). Building images in CI and pushing SHA-tagged images to a
+  registry (e.g. GHCR) would stop building on the production host and give a
+  fast, reliable rollback (redeploy a previous tag instead of rebuilding).
+- **Staging environment** to validate a deploy before it reaches users.
+- **HTTPS** (currently HTTP-only; secure-cookie flags are relaxed until a domain
+  + TLS are in place).
+- **Application-layer encryption of Senior PII** (see `seniors/models.py`
+  `TODO(security)` notes) and **DB backup before auto-migrations**.
+
 
