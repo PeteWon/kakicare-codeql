@@ -5,7 +5,7 @@
 # never node_modules or the toolchain.
 
 # ---- Stage 1: build the SPA --------------------------------------------------
-FROM node:20-alpine AS frontend-build
+FROM node:26-alpine AS frontend-build
 
 WORKDIR /build
 
