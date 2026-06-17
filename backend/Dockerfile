@@ -7,7 +7,7 @@
 # - Secrets (SECRET_KEY, POSTGRES_PASSWORD, etc.) come from environment
 #   variables, never baked into the image. Do NOT COPY a .env file in.
 
-FROM python:3.11-slim AS base
+FROM python:3.14-slim AS base
 
 # Avoid Python writing .pyc files and buffering stdout/stderr — both hurt
 # Docker logging and waste image space.
