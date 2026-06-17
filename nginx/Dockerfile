@@ -21,7 +21,7 @@ ENV VITE_API_BASE_URL=""
 RUN npm run build
 
 # ---- Stage 2: nginx image ----------------------------------------------------
-FROM nginx:1.27-alpine
+FROM nginx:1.31-alpine
 
 # Remove the default site config; replace with ours.
 RUN rm -f /etc/nginx/conf.d/default.conf
