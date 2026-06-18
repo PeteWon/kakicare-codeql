@@ -209,13 +209,16 @@ class LoginView(APIView):
             # SR-AUTH-06 (timing equalizer): run Argon2id against a dummy hash
             # so response time is indistinguishable from a wrong-password attempt.
             check_password(password, _DUMMY_PASSWORD_HASH)
+            record_audit(user=None, action='auth.login.failed', request_ip=_get_ip(request))
             return Response({'status': 'invalid'}, status=status.HTTP_200_OK)
 
         if not user.check_password(password):
+            record_audit(user=user, action='auth.login.failed', request_ip=_get_ip(request))
             return Response({'status': 'invalid'}, status=status.HTTP_200_OK)
 
         # SR-AUTH-06: inactive/unverified → same generic error as wrong password.
         if not user.is_active or not user.is_email_verified:
+            record_audit(user=user, action='auth.login.failed', request_ip=_get_ip(request))
             return Response({'status': 'invalid'}, status=status.HTTP_200_OK)
 
         # Determine MFA requirement based on role and enrolment state.
@@ -250,6 +253,7 @@ class LoginView(APIView):
         # SR-SESS-01: session ID in HttpOnly cookie only — never in JSON body.
         auth.login(request, user)
         request.session.set_expiry(8 * 3600)  # SR-AUTH-05: 8-hour volunteer session
+        record_audit(user=user, action='auth.login.success', request_ip=_get_ip(request))
 
         return Response(
             {'status': 'success', 'role': user.role},
@@ -263,6 +267,7 @@ class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        record_audit(user=request.user, action='auth.logout', request_ip=_get_ip(request))
         auth.logout(request)
         return Response({'detail': 'Logged out.'}, status=status.HTTP_200_OK)
 
@@ -420,6 +425,7 @@ class MFAVerifyView(APIView):
                 confirming_new_device = False
 
         if not verified:
+            record_audit(user=user, action='auth.mfa.verify_failed', request_ip=_get_ip(request))
             return Response(
                 {'detail': _GENERIC_MFA_ERROR},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -430,6 +436,7 @@ class MFAVerifyView(APIView):
             # Completing enrolment: promote the device from unconfirmed to active.
             device.confirmed = True
             device.save(update_fields=['confirmed'])
+            record_audit(user=user, action='auth.mfa.enrolled', request_ip=_get_ip(request))
 
         if is_mid_login:
             # SR-AUTH-03: NOW establish the full authenticated session, after
@@ -438,6 +445,7 @@ class MFAVerifyView(APIView):
             # SR-AUTH-05: 1-hour session for staff, 8-hour for volunteers.
             expiry = 3600 if user.role == User.Role.STAFF else 8 * 3600
             request.session.set_expiry(expiry)
+            record_audit(user=user, action='auth.login.success', request_ip=_get_ip(request))
             return Response(
                 {'status': 'success', 'role': user.role},
                 status=status.HTTP_200_OK,
