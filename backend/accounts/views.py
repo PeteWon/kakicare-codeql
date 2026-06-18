@@ -500,6 +500,7 @@ class PasswordResetRequestView(APIView):
             token_hash=token_hash,
             expires_at=expires_at,
         )
+        record_audit(user=user, action='auth.password_reset.requested', request_ip=_get_ip(request))
 
         reset_url = f'{settings.FRONTEND_BASE_URL}/reset-password?token={raw_token}'
 
@@ -573,6 +574,7 @@ class PasswordResetConfirmView(APIView):
             # SR-AUTH-01: set_password hashes with Argon2id.
             user.set_password(new_password)
             user.save(update_fields=['password'])
+            record_audit(user=user, action='auth.password_reset.completed', request_ip=_get_ip(request))
 
             # SR-SESS: changing the password invalidates all existing sessions.
             # Django stores a hash of the user's password (_auth_user_hash) in
@@ -617,6 +619,7 @@ class RegisterView(APIView):
                 is_email_verified=False,
             )
             _issue_and_send_verification_token(user)
+            record_audit(user=user, action='auth.register', request_ip=_get_ip(request))
 
         return Response(
             {'detail': 'If this email is valid, a verification link has been sent.'},
@@ -693,6 +696,7 @@ class VerifyEmailView(APIView):
             user = token_obj.user
             user.is_email_verified = True
             user.save(update_fields=['is_email_verified'])
+            record_audit(user=user, action='auth.email.verified', request_ip=_get_ip(request))
 
         return Response(
             {'detail': 'Email verified successfully.'},
