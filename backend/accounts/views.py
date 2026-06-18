@@ -21,6 +21,8 @@ from rest_framework.response import Response
 from rest_framework.throttling import SimpleRateThrottle
 from rest_framework.views import APIView
 
+from audit.services import record_audit
+
 from .models import EmailVerificationToken, MFABackupCode, PasswordResetToken, User
 from .serializers import (
     LoginSerializer,
@@ -46,6 +48,11 @@ _GENERIC_MFA_ERROR = 'Invalid or expired code.'
 # not found at login we still run check_password against this value so the
 # Argon2id work happens and response time does not betray email existence.
 _DUMMY_PASSWORD_HASH = make_password('unused-dummy-timing-value')
+
+
+def _get_ip(request) -> str | None:
+    xff = request.META.get('HTTP_X_FORWARDED_FOR')
+    return xff.split(',')[0].strip() if xff else request.META.get('REMOTE_ADDR')
 
 
 def _hash_token(raw_token: str) -> str:
@@ -202,13 +209,16 @@ class LoginView(APIView):
             # SR-AUTH-06 (timing equalizer): run Argon2id against a dummy hash
             # so response time is indistinguishable from a wrong-password attempt.
             check_password(password, _DUMMY_PASSWORD_HASH)
+            record_audit(user=None, action='auth.login.failed', request_ip=_get_ip(request))
             return Response({'status': 'invalid'}, status=status.HTTP_200_OK)
 
         if not user.check_password(password):
+            record_audit(user=user, action='auth.login.failed', request_ip=_get_ip(request))
             return Response({'status': 'invalid'}, status=status.HTTP_200_OK)
 
         # SR-AUTH-06: inactive/unverified → same generic error as wrong password.
         if not user.is_active or not user.is_email_verified:
+            record_audit(user=user, action='auth.login.failed', request_ip=_get_ip(request))
             return Response({'status': 'invalid'}, status=status.HTTP_200_OK)
 
         # Determine MFA requirement based on role and enrolment state.
@@ -243,6 +253,7 @@ class LoginView(APIView):
         # SR-SESS-01: session ID in HttpOnly cookie only — never in JSON body.
         auth.login(request, user)
         request.session.set_expiry(8 * 3600)  # SR-AUTH-05: 8-hour volunteer session
+        record_audit(user=user, action='auth.login.success', request_ip=_get_ip(request))
 
         return Response(
             {'status': 'success', 'role': user.role},
@@ -256,6 +267,7 @@ class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        record_audit(user=request.user, action='auth.logout', request_ip=_get_ip(request))
         auth.logout(request)
         return Response({'detail': 'Logged out.'}, status=status.HTTP_200_OK)
 
@@ -413,6 +425,7 @@ class MFAVerifyView(APIView):
                 confirming_new_device = False
 
         if not verified:
+            record_audit(user=user, action='auth.mfa.verify_failed', request_ip=_get_ip(request))
             return Response(
                 {'detail': _GENERIC_MFA_ERROR},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -423,6 +436,7 @@ class MFAVerifyView(APIView):
             # Completing enrolment: promote the device from unconfirmed to active.
             device.confirmed = True
             device.save(update_fields=['confirmed'])
+            record_audit(user=user, action='auth.mfa.enrolled', request_ip=_get_ip(request))
 
         if is_mid_login:
             # SR-AUTH-03: NOW establish the full authenticated session, after
@@ -431,6 +445,7 @@ class MFAVerifyView(APIView):
             # SR-AUTH-05: 1-hour session for staff, 8-hour for volunteers.
             expiry = 3600 if user.role == User.Role.STAFF else 8 * 3600
             request.session.set_expiry(expiry)
+            record_audit(user=user, action='auth.login.success', request_ip=_get_ip(request))
             return Response(
                 {'status': 'success', 'role': user.role},
                 status=status.HTTP_200_OK,
@@ -485,6 +500,7 @@ class PasswordResetRequestView(APIView):
             token_hash=token_hash,
             expires_at=expires_at,
         )
+        record_audit(user=user, action='auth.password_reset.requested', request_ip=_get_ip(request))
 
         reset_url = f'{settings.FRONTEND_BASE_URL}/reset-password?token={raw_token}'
 
@@ -558,6 +574,7 @@ class PasswordResetConfirmView(APIView):
             # SR-AUTH-01: set_password hashes with Argon2id.
             user.set_password(new_password)
             user.save(update_fields=['password'])
+            record_audit(user=user, action='auth.password_reset.completed', request_ip=_get_ip(request))
 
             # SR-SESS: changing the password invalidates all existing sessions.
             # Django stores a hash of the user's password (_auth_user_hash) in
@@ -602,6 +619,7 @@ class RegisterView(APIView):
                 is_email_verified=False,
             )
             _issue_and_send_verification_token(user)
+            record_audit(user=user, action='auth.register', request_ip=_get_ip(request))
 
         return Response(
             {'detail': 'If this email is valid, a verification link has been sent.'},
@@ -678,6 +696,7 @@ class VerifyEmailView(APIView):
             user = token_obj.user
             user.is_email_verified = True
             user.save(update_fields=['is_email_verified'])
+            record_audit(user=user, action='auth.email.verified', request_ip=_get_ip(request))
 
         return Response(
             {'detail': 'Email verified successfully.'},
