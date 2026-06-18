@@ -21,6 +21,8 @@ from rest_framework.response import Response
 from rest_framework.throttling import SimpleRateThrottle
 from rest_framework.views import APIView
 
+from audit.services import record_audit
+
 from .models import EmailVerificationToken, MFABackupCode, PasswordResetToken, User
 from .serializers import (
     LoginSerializer,
@@ -46,6 +48,11 @@ _GENERIC_MFA_ERROR = 'Invalid or expired code.'
 # not found at login we still run check_password against this value so the
 # Argon2id work happens and response time does not betray email existence.
 _DUMMY_PASSWORD_HASH = make_password('unused-dummy-timing-value')
+
+
+def _get_ip(request) -> str | None:
+    xff = request.META.get('HTTP_X_FORWARDED_FOR')
+    return xff.split(',')[0].strip() if xff else request.META.get('REMOTE_ADDR')
 
 
 def _hash_token(raw_token: str) -> str:
