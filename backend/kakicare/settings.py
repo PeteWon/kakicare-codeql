@@ -213,6 +213,11 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 # Deny framing entirely (clickjacking protection).
 X_FRAME_OPTIONS = 'DENY'
 
+# SR-SESS-02: Referrer-Policy for all Django responses (API + admin).
+# The SPA HTML is served by nginx which sets this header directly; Django sets
+# it here so API and admin responses are also covered in all environments.
+SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
+
 
 # --- File uploads (volunteer documents) --------------------------------------
 # SECURITY (SR-DATA-03): uploaded identity/declaration documents must be stored
