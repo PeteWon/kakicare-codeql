@@ -131,6 +131,10 @@ AUTH_PASSWORD_VALIDATORS = [
      'OPTIONS': {'min_length': 12}},  # SR-AUTH: minimum length enforced server-side.
     {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
+    # SR-AUTH-02: screen against the Have I Been Pwned breach corpus via
+    # k-anonymity (only a 5-char SHA-1 prefix is sent — password never disclosed).
+    # Fails open on network error so users are not blocked by HIBP outages.
+    {'NAME': 'accounts.validators.HIBPPasswordValidator'},
 ]
 
 
