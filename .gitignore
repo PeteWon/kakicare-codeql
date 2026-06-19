@@ -32,6 +32,15 @@ vite.config.js
 # ignored. Production deployments use a separate, mounted volume.
 private_media/
 
+# TLS private keys and Let's Encrypt certs — NEVER commit.
+# Production certs live in a Docker named volume (letsencrypt:) on the EC2,
+# not in this repository. These patterns guard against accidental bind-mounts.
+letsencrypt/
+certbot/conf/
+certbot/www/
+*.pem
+*.key
+
 # Editor / OS
 .DS_Store
 .vscode/*
