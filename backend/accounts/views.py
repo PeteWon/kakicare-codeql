@@ -23,7 +23,13 @@ from rest_framework.views import APIView
 
 from audit.services import record_audit
 
-from .models import EmailVerificationToken, MFABackupCode, PasswordResetToken, User
+from .models import (
+    EmailVerificationToken,
+    MFABackupCode,
+    PasswordResetToken,
+    StaffInviteToken,
+    User,
+)
 from .serializers import (
     LoginSerializer,
     MFAVerifySerializer,
@@ -37,6 +43,7 @@ logger = logging.getLogger(__name__)
 
 _TOKEN_EXPIRY_HOURS = 24
 _PASSWORD_RESET_EXPIRY_HOURS = 1
+_STAFF_INVITE_EXPIRY_HOURS = 72
 _BACKUP_CODE_COUNT = 8
 
 _GENERIC_VERIFY_ERROR = 'Invalid or expired verification link.'
@@ -648,6 +655,47 @@ def _issue_and_send_verification_token(user: User) -> None:
             f'The link expires in {_TOKEN_EXPIRY_HOURS} hours.\n\n'
             f'{verify_url}\n\n'
             f'If you did not register for KakiCare, you can ignore this email.'
+        ),
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[user.email],
+    )
+
+
+def issue_and_send_staff_invite(user: User) -> None:
+    """Issue a single-use invite token and email the staff member a set-password link.
+
+    Called when an admin provisions a staff account in the Django portal. Any
+    outstanding invites are expired first so only one link is ever live (also
+    makes this safe to call again as a 'resend'). Public (not underscored) so the
+    admin (admin.py) can call it.
+    """
+    # Expire any outstanding invites before issuing a new one.
+    user.staff_invite_tokens.filter(used_at__isnull=True).update(
+        used_at=timezone.now()
+    )
+
+    raw_token = secrets.token_urlsafe(32)
+    # SR-DATA: only the hash is stored; the raw token goes to email only.
+    token_hash = _hash_token(raw_token)
+    expires_at = timezone.now() + timedelta(hours=_STAFF_INVITE_EXPIRY_HOURS)
+
+    StaffInviteToken.objects.create(
+        user=user,
+        token_hash=token_hash,
+        expires_at=expires_at,
+    )
+
+    invite_url = f'{settings.FRONTEND_BASE_URL}/staff/accept-invite?token={raw_token}'
+
+    send_mail(
+        subject='You have been invited to KakiCare',
+        message=(
+            f'Hi {user.full_name},\n\n'
+            f'A KakiCare administrator has created a staff account for you. '
+            f'Click the link below to set your password and activate your account. '
+            f'The link expires in {_STAFF_INVITE_EXPIRY_HOURS} hours.\n\n'
+            f'{invite_url}\n\n'
+            f'If you were not expecting this invitation, you can ignore this email.'
         ),
         from_email=settings.DEFAULT_FROM_EMAIL,
         recipient_list=[user.email],
