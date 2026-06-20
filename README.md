@@ -205,7 +205,7 @@ Configure the host firewall — **always allow 22 before enabling**:
 ```bash
 sudo ufw allow 22/tcp
 sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp     # reserved for future HTTPS
+sudo ufw allow 443/tcp
 sudo ufw enable
 sudo ufw status
 ```
@@ -234,6 +234,57 @@ docker compose -f docker-compose.prod.yml exec web python manage.py createsuperu
 ```
 
 Verify in a browser: <http://18.221.83.106/>.
+
+### Enable HTTPS (first-time cert issuance)
+
+HTTPS uses DuckDNS (`kakicare.duckdns.org` → 18.221.83.106) + Let's Encrypt + nginx TLS termination.
+
+**One-time steps on the EC2** (after the stack is cloned):
+
+```bash
+# 1. Bring up nginx + certbot so port 80 is available for the ACME challenge:
+docker compose -f docker-compose.prod.yml up -d nginx certbot
+
+# 2. Issue the cert (replace the email address):
+docker compose -f docker-compose.prod.yml run --rm certbot \
+  certonly --webroot -w /var/www/certbot \
+  -d kakicare.duckdns.org \
+  --email your@email.com --agree-tos --no-eff-email
+
+# 3. Bring the full stack up:
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+**Before step 3**, update `backend/.env` on the EC2 from the template:
+
+```bash
+nano backend/.env
+```
+
+Change / add these values (see `backend/.env.prod.example` for context):
+
+```env
+SESSION_COOKIE_SECURE=True
+CSRF_COOKIE_SECURE=True
+SECURE_HSTS_SECONDS=31536000
+ALLOWED_HOSTS=kakicare.duckdns.org,18.221.83.106
+FRONTEND_BASE_URL=https://kakicare.duckdns.org
+CORS_ALLOWED_ORIGINS=https://kakicare.duckdns.org
+CSRF_TRUSTED_ORIGINS=https://kakicare.duckdns.org
+```
+
+Then restart the web container to pick up the new env vars:
+
+```bash
+docker compose -f docker-compose.prod.yml restart web
+```
+
+Cert renewal is automatic — the `certbot` service checks every 12 hours.
+After a renewal, reload nginx:
+
+```bash
+docker compose -f docker-compose.prod.yml exec nginx nginx -s reload
+```
 
 ### Set up automated deploys (GitHub Actions)
 
@@ -318,8 +369,6 @@ blocked. `main` additionally requires one approving review.
   registry (e.g. GHCR) would stop building on the production host and give a
   fast, reliable rollback (redeploy a previous tag instead of rebuilding).
 - **Staging environment** to validate a deploy before it reaches users.
-- **HTTPS** (currently HTTP-only; secure-cookie flags are relaxed until a domain
-  + TLS are in place).
 - **Application-layer encryption of Senior PII** (see `seniors/models.py`
   `TODO(security)` notes) and **DB backup before auto-migrations**.
 
