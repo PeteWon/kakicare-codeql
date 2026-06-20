@@ -687,7 +687,9 @@ def issue_and_send_staff_invite(user: User) -> None:
         expires_at=expires_at,
     )
 
-    invite_url = f'{settings.FRONTEND_BASE_URL}/staff/accept-invite?token={raw_token}'
+    # Public path (not under /staff, which is auth-gated) — the invitee is not
+    # logged in yet when they click this link.
+    invite_url = f'{settings.FRONTEND_BASE_URL}/accept-invite?token={raw_token}'
 
     send_mail(
         subject='You have been invited to KakiCare',
