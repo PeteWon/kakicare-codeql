@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Button, Card, TextField } from '@/components';
 import { api, ApiError } from '@/lib/api';
-import { homePathForRole } from '@/lib/auth';
+import { fetchCurrentUser, homePathForRole } from '@/lib/auth';
 import type { MfaSetupResult, UserRole } from '@/lib/types';
 import { email as emailRule, required, validate } from '@/lib/validation';
 
@@ -34,6 +34,14 @@ type Step = 'credentials' | 'mfa' | 'mfa_setup';
 
 export function Login() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  // Only redirect to relative paths — prevents open-redirect attacks.
+  const rawNext = searchParams.get('next') ?? '';
+  const nextPath =
+    rawNext.startsWith('/') && !rawNext.startsWith('//')
+      ? rawNext
+      : null;
+
   const [step, setStep] = useState<Step>('credentials');
 
   // credentials step
@@ -59,6 +67,15 @@ export function Login() {
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // Redirect away if already authenticated.
+  const [checkingAuth, setCheckingAuth] = useState(true);
+  useEffect(() => {
+    fetchCurrentUser().then((user) => {
+      if (user) navigate(homePathForRole(user.role), { replace: true });
+      else setCheckingAuth(false);
+    });
+  }, [navigate]);
+
   // ── Credentials step ────────────────────────────────────────────────────
 
   async function handleCredentials(e: FormEvent) {
@@ -76,7 +93,7 @@ export function Login() {
       const result = await api.login(email, password);
       switch (result.status) {
         case 'success':
-          navigate(homePathForRole(result.role));
+          navigate(nextPath ?? homePathForRole(result.role));
           return;
         case 'mfa_required':
           if (result.mfa_enrolled) {
@@ -139,7 +156,7 @@ export function Login() {
         : { code: trimmed };
       const result = await api.verifyMfa(payload);
       if (result.status === 'success') {
-        navigate(homePathForRole(result.role));
+        navigate(nextPath ?? homePathForRole(result.role));
         return;
       }
       setFormError(GENERIC_MFA_ERROR);
@@ -185,7 +202,7 @@ export function Login() {
     try {
       const result = await api.verifyMfa({ code: trimmed });
       if (result.status === 'success') {
-        navigate(homePathForRole(result.role));
+        navigate(nextPath ?? homePathForRole(result.role));
         return;
       }
       setSetupCodeError(GENERIC_MFA_ERROR);
@@ -208,6 +225,8 @@ export function Login() {
   }
 
   // ── Render ───────────────────────────────────────────────────────────────
+
+  if (checkingAuth) return null;
 
   if (step === 'mfa_setup') {
     return (
