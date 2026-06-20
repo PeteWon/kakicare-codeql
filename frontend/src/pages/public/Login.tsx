@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button, Card, TextField } from '@/components';
 import { api, ApiError } from '@/lib/api';
-import { homePathForRole } from '@/lib/auth';
+import { fetchCurrentUser, homePathForRole } from '@/lib/auth';
 import type { MfaSetupResult, UserRole } from '@/lib/types';
 import { email as emailRule, required, validate } from '@/lib/validation';
 
@@ -58,6 +58,15 @@ export function Login() {
   // shared
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  // Redirect away if already authenticated.
+  const [checkingAuth, setCheckingAuth] = useState(true);
+  useEffect(() => {
+    fetchCurrentUser().then((user) => {
+      if (user) navigate(homePathForRole(user.role), { replace: true });
+      else setCheckingAuth(false);
+    });
+  }, [navigate]);
 
   // ── Credentials step ────────────────────────────────────────────────────
 
@@ -208,6 +217,8 @@ export function Login() {
   }
 
   // ── Render ───────────────────────────────────────────────────────────────
+
+  if (checkingAuth) return null;
 
   if (step === 'mfa_setup') {
     return (
