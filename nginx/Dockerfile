@@ -34,6 +34,10 @@ COPY --from=frontend-build /build/dist /usr/share/nginx/html
 # docker-compose.prod.yml). We just ensure the mount point exists.
 RUN mkdir -p /usr/share/nginx/static
 
+# Certbot writes HTTP-01 challenge files here; nginx serves them on port 80.
+RUN mkdir -p /var/www/certbot
+
 EXPOSE 80
+EXPOSE 443
 
 # Default CMD from the nginx base image is fine.
