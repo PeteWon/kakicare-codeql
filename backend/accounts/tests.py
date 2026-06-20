@@ -16,8 +16,17 @@ from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from accounts.models import EmailVerificationToken, PasswordResetToken, User
-from accounts.views import _generate_backup_codes, _hash_token
+from accounts.models import (
+    EmailVerificationToken,
+    PasswordResetToken,
+    StaffInviteToken,
+    User,
+)
+from accounts.views import (
+    _generate_backup_codes,
+    _hash_token,
+    issue_and_send_staff_invite,
+)
 from kakicare.test_utils import (
     DEFAULT_PASSWORD,
     KakiCareAPITestCase,
@@ -284,3 +293,111 @@ class EmailVerificationTests(KakiCareAPITestCase):
         token_obj = EmailVerificationToken.objects.get(user=self.user)
         self.assertNotEqual(token_obj.token_hash, raw)
         self.assertEqual(token_obj.token_hash, _hash_token(raw))
+
+
+class StaffInviteTests(KakiCareAPITestCase):
+    """Staff onboarding via emailed invite (admin provisions -> staff sets password)."""
+
+    def setUp(self):
+        super().setUp()
+        self.accept_url = reverse('auth-accept-invite')
+        self.login_url = reverse('auth-login')
+        # Mirror how the admin creates a staff account: inactive, unverified,
+        # no usable password, no Django-admin access.
+        self.user = User.objects.create_user(
+            email='newstaff@example.com',
+            password=None,  # set_unusable_password under the hood
+            full_name='New Staff',
+            role=User.Role.STAFF,
+            is_active=False,
+            is_email_verified=False,
+        )
+
+    def _issue_token(self):
+        issue_and_send_staff_invite(self.user)
+        body = mail.outbox[-1].body
+        match = re.search(r'accept-invite\?token=([^\s]+)', body)
+        self.assertIsNotNone(match, 'Invite email did not contain a token link')
+        return match.group(1)
+
+    def test_invite_email_links_to_public_accept_path(self):
+        issue_and_send_staff_invite(self.user)
+        self.assertEqual(len(mail.outbox), 1)
+        body = mail.outbox[-1].body
+        # Public path, NOT the auth-gated /staff tree.
+        self.assertIn('/accept-invite?token=', body)
+        self.assertNotIn('/staff/accept-invite', body)
+
+    def test_accept_sets_password_and_activates_account(self):
+        token = self._issue_token()
+        resp = self.client.post(
+            self.accept_url, {'token': token, 'new_password': 'Brand-New-Passphrase99'}
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.is_active)
+        self.assertTrue(self.user.is_email_verified)
+        self.assertTrue(self.user.has_usable_password())
+        self.assertTrue(self.user.check_password('Brand-New-Passphrase99'))
+
+    def test_accepted_staff_then_requires_mfa_at_login(self):
+        token = self._issue_token()
+        self.client.post(
+            self.accept_url, {'token': token, 'new_password': 'Brand-New-Passphrase99'}
+        )
+        resp = self.client.post(
+            self.login_url,
+            {'email': 'newstaff@example.com', 'password': 'Brand-New-Passphrase99'},
+        )
+        # SR-AUTH-03: staff always gated behind MFA; no session issued here.
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data['status'], 'mfa_required')
+
+    def test_invite_token_is_single_use(self):
+        token = self._issue_token()
+        first = self.client.post(
+            self.accept_url, {'token': token, 'new_password': 'Brand-New-Passphrase99'}
+        )
+        self.assertEqual(first.status_code, 200)
+        second = self.client.post(
+            self.accept_url, {'token': token, 'new_password': 'Another-Passphrase99'}
+        )
+        self.assertEqual(second.status_code, 400)
+
+    def test_reissuing_invite_invalidates_the_previous_token(self):
+        first_token = self._issue_token()
+        second_token = self._issue_token()  # acts as a "resend"
+        self.assertNotEqual(first_token, second_token)
+        # The superseded token must no longer work.
+        stale = self.client.post(
+            self.accept_url, {'token': first_token, 'new_password': 'Brand-New-Passphrase99'}
+        )
+        self.assertEqual(stale.status_code, 400)
+        # The latest token still works.
+        ok = self.client.post(
+            self.accept_url, {'token': second_token, 'new_password': 'Brand-New-Passphrase99'}
+        )
+        self.assertEqual(ok.status_code, 200)
+
+    def test_weak_password_is_rejected_and_account_stays_inactive(self):
+        token = self._issue_token()
+        resp = self.client.post(
+            self.accept_url, {'token': token, 'new_password': 'short'}
+        )
+        self.assertEqual(resp.status_code, 400)
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.is_active)
+        self.assertFalse(self.user.has_usable_password())
+
+    def test_invalid_token_returns_generic_400(self):
+        resp = self.client.post(
+            self.accept_url,
+            {'token': 'not-a-real-token', 'new_password': 'Brand-New-Passphrase99'},
+        )
+        self.assertEqual(resp.status_code, 400)
+
+    def test_only_token_hash_is_stored_never_raw(self):
+        token = self._issue_token()
+        token_obj = StaffInviteToken.objects.get(user=self.user, used_at__isnull=True)
+        self.assertNotEqual(token_obj.token_hash, token)
+        self.assertEqual(token_obj.token_hash, _hash_token(token))
