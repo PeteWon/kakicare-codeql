@@ -31,6 +31,7 @@ from .models import (
     User,
 )
 from .serializers import (
+    AcceptInviteSerializer,
     LoginSerializer,
     MFAVerifySerializer,
     PasswordResetConfirmSerializer,
@@ -49,6 +50,7 @@ _BACKUP_CODE_COUNT = 8
 _GENERIC_VERIFY_ERROR = 'Invalid or expired verification link.'
 _GENERIC_LOGIN_ERROR = 'Invalid email or password.'
 _GENERIC_RESET_ERROR = 'Invalid or expired reset link.'
+_GENERIC_INVITE_ERROR = 'Invalid or expired invite link.'
 _GENERIC_MFA_ERROR = 'Invalid or expired code.'
 
 # SR-AUTH-06 (timing equalizer): computed once at startup. When an email is
@@ -700,6 +702,75 @@ def issue_and_send_staff_invite(user: User) -> None:
         from_email=settings.DEFAULT_FROM_EMAIL,
         recipient_list=[user.email],
     )
+
+
+class AcceptInviteView(APIView):
+    """POST /api/auth/accept-invite
+
+    A staff member sets their initial password from an emailed invite token.
+    On success the account is activated and marked email-verified (clicking the
+    link proves control of the inbox). First login then forces TOTP enrolment.
+    """
+
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = AcceptInviteSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        raw_token = serializer.validated_data['token']
+        new_password = serializer.validated_data['new_password']
+        token_hash = _hash_token(raw_token)
+
+        with transaction.atomic():
+            try:
+                token_obj = (
+                    StaffInviteToken.objects
+                    .select_related('user')
+                    .select_for_update()
+                    .get(token_hash=token_hash)
+                )
+            except StaffInviteToken.DoesNotExist:
+                # SR-AUTH-06: single generic error for invalid/expired/used token.
+                return Response(
+                    {'detail': _GENERIC_INVITE_ERROR},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            if not token_obj.is_valid():
+                return Response(
+                    {'detail': _GENERIC_INVITE_ERROR},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            user = token_obj.user
+
+            # Validate against the full policy (SR-AUTH-02), incl. HIBP and the
+            # similarity check against this user's email/name.
+            try:
+                validate_password(new_password, user=user)
+            except DjangoValidationError as exc:
+                return Response(
+                    {'new_password': list(exc.messages)},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            token_obj.used_at = timezone.now()
+            token_obj.save(update_fields=['used_at'])
+
+            # SR-AUTH-01: set_password hashes with Argon2id. Activate the account
+            # and mark email verified — clicking the link proves inbox control.
+            user.set_password(new_password)
+            user.is_active = True
+            user.is_email_verified = True
+            user.save(update_fields=['password', 'is_active', 'is_email_verified'])
+            record_audit(user=user, action='auth.staff_invite.accepted', request_ip=_get_ip(request))
+
+        return Response(
+            {'detail': 'Password set successfully. You can now log in.'},
+            status=status.HTTP_200_OK,
+        )
 
 
 class VerifyEmailView(APIView):

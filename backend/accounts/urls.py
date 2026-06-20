@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views import (
+    AcceptInviteView,
     LoginView,
     LogoutView,
     MeView,
@@ -15,6 +16,7 @@ from .views import (
 urlpatterns = [
     path('register', RegisterView.as_view(), name='auth-register'),
     path('verify-email', VerifyEmailView.as_view(), name='auth-verify-email'),
+    path('accept-invite', AcceptInviteView.as_view(), name='auth-accept-invite'),
     path('login', LoginView.as_view(), name='auth-login'),
     path('logout', LogoutView.as_view(), name='auth-logout'),
     path('me', MeView.as_view(), name='auth-me'),
