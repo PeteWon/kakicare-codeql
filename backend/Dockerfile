@@ -1,16 +1,13 @@
 # KakiCare backend — production image (Django + gunicorn).
 #
 # SECURITY:
-# - python:3.13-slim base, kept up to date by rebuilding regularly. Pinned to
-#   3.13 (not 3.14): it is the newest Python on Django 5.2's officially
-#   supported matrix (3.10–3.13). 3.14 builds but is not an officially
-#   supported Django 5.2 target, so we stay on the supported version.
+# - python:3.11-slim base, kept up to date by rebuilding regularly.
 # - Runs as a non-root user inside the container.
 # - DEBUG must be False in production; settings.py enforces this via env.
 # - Secrets (SECRET_KEY, POSTGRES_PASSWORD, etc.) come from environment
 #   variables, never baked into the image. Do NOT COPY a .env file in.
 
-FROM python:3.14-slim AS base
+FROM python:3.11-slim AS base
 
 # Avoid Python writing .pyc files and buffering stdout/stderr — both hurt
 # Docker logging and waste image space.

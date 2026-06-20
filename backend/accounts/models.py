@@ -128,23 +128,6 @@ class PasswordResetToken(_HashedToken):
         return f'PasswordResetToken(user={self.user_id})'
 
 
-class StaffInviteToken(_HashedToken):
-    """Token emailed to a newly-provisioned staff member to set their password.
-
-    A staff account is created (inactive, with no usable password) by an admin
-    in the Django portal; this single-use token lets the staff member set their
-    own password and activate the account, so no password is ever shared
-    out-of-band. The raw token is emailed; only its hash is stored (_HashedToken).
-    """
-
-    user = models.ForeignKey(
-        User, on_delete=models.CASCADE, related_name='staff_invite_tokens'
-    )
-
-    def __str__(self):
-        return f'StaffInviteToken(user={self.user_id})'
-
-
 class MFABackupCode(models.Model):
     """Single-use recovery code for TOTP MFA.
 

@@ -45,9 +45,8 @@ INSTALLED_APPS = [
     # Third-party
     'corsheaders',               # CORS headers for the React SPA (different origin in dev).
     'rest_framework',
-    'django_otp',  # TOTP MFA framework.
-    'django_otp.plugins.otp_totp',  # TOTP device plugin (app + admin-portal MFA).
-    'django_otp.plugins.otp_static',  # Static recovery tokens — bootstrap admin-portal MFA.
+    'django_otp',  # TOTP MFA framework (installed; no MFA logic wired yet).
+    'django_otp.plugins.otp_totp',  # TOTP device plugin.
 
     # Local apps
     'accounts.apps.AccountsConfig',
@@ -132,10 +131,6 @@ AUTH_PASSWORD_VALIDATORS = [
      'OPTIONS': {'min_length': 12}},  # SR-AUTH: minimum length enforced server-side.
     {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
-    # SR-AUTH-02: screen against the Have I Been Pwned breach corpus via
-    # k-anonymity (only a 5-char SHA-1 prefix is sent — password never disclosed).
-    # Fails open on network error so users are not blocked by HIBP outages.
-    {'NAME': 'accounts.validators.HIBPPasswordValidator'},
 ]
 
 
@@ -217,11 +212,6 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 
 # Deny framing entirely (clickjacking protection).
 X_FRAME_OPTIONS = 'DENY'
-
-# SR-SESS-02: Referrer-Policy for all Django responses (API + admin).
-# The SPA HTML is served by nginx which sets this header directly; Django sets
-# it here so API and admin responses are also covered in all environments.
-SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
 
 
 # --- File uploads (volunteer documents) --------------------------------------

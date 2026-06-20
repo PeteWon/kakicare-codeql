@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Navigate, Outlet, useLocation } from 'react-router-dom';
+import { Navigate, Outlet } from 'react-router-dom';
 import { fetchCurrentUser } from '@/lib/auth';
 import type { User, UserRole } from '@/lib/types';
 
@@ -18,7 +18,6 @@ type AuthState = 'loading' | User | null;
 
 export function ProtectedRoute({ role }: ProtectedRouteProps) {
   const [authState, setAuthState] = useState<AuthState>('loading');
-  const location = useLocation();
 
   useEffect(() => {
     fetchCurrentUser().then((user) => setAuthState(user));
@@ -37,8 +36,7 @@ export function ProtectedRoute({ role }: ProtectedRouteProps) {
   }
 
   if (!authState || authState.role !== role) {
-    const next = encodeURIComponent(location.pathname);
-    return <Navigate to={`/login?next=${next}`} replace />;
+    return <Navigate to="/login" replace />;
   }
 
   return <Outlet />;

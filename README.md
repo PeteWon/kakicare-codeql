@@ -35,35 +35,6 @@ Dependencies are kept intentionally minimal — no UI component library, state-m
 library, or form library — so the team can understand and defend its own code. Auth is
 implemented in-house (no OAuth / third-party auth library).
 
-## Team onboarding (start here)
-
-New to the repo? You need **no production secrets** to develop locally — not the
-EC2 key, not the prod `.env`, not the SMTP or deploy credentials. You create one
-local secrets file (`backend/.env`) and run two processes.
-
-1. **Install** Node 18+ (20 recommended), Python 3.11+ (3.13 to match prod),
-   Docker Desktop (for the local Postgres container), and git.
-2. **Create `backend/.env`** (gitignored) from the template and set two values:
-   ```bash
-   cd backend && cp .env.example .env      # PowerShell: Copy-Item .env.example .env
-   ```
-   - `SECRET_KEY=` → generate: `python -c "from django.core.management.utils import get_random_secret_key as g; print(g())"`
-   - `POSTGRES_PASSWORD=` → any local password.
-
-   Everything else is dev-ready as shipped (`DEBUG=True`, `POSTGRES_HOST=localhost`,
-   and the console email backend — verification/reset emails print to the terminal,
-   no SMTP needed). `frontend/.env` is optional (defaults to `http://localhost:8000`).
-3. **Run it** (detailed steps in [Backend](#backend--running-locally) and
-   [Frontend](#frontend--running-locally) below): `docker compose up -d` for Postgres,
-   then Django (`migrate` + `runserver`) and the Vite dev server (`npm run dev`).
-
-**Before your first PR:** branch off `develop` (not `main`), commit under your own
-GitHub identity, and open the PR into `develop`. See
-[Branching & contribution workflow](#branching--contribution-workflow).
-
-Gitignored / never committed: `backend/.env`, `frontend/.env`, `node_modules/`,
-`dist/`, `private_media/` (uploaded PII), `.venv/`.
-
 ## Prerequisites
 
 - **Node.js 18+** (developed on Node 20+) and npm.
@@ -205,7 +176,7 @@ Configure the host firewall — **always allow 22 before enabling**:
 ```bash
 sudo ufw allow 22/tcp
 sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
+sudo ufw allow 443/tcp     # reserved for future HTTPS
 sudo ufw enable
 sudo ufw status
 ```
@@ -234,57 +205,6 @@ docker compose -f docker-compose.prod.yml exec web python manage.py createsuperu
 ```
 
 Verify in a browser: <http://18.221.83.106/>.
-
-### Enable HTTPS (first-time cert issuance)
-
-HTTPS uses DuckDNS (`kakicare.duckdns.org` → 18.221.83.106) + Let's Encrypt + nginx TLS termination.
-
-**One-time steps on the EC2** (after the stack is cloned):
-
-```bash
-# 1. Bring up nginx + certbot so port 80 is available for the ACME challenge:
-docker compose -f docker-compose.prod.yml up -d nginx certbot
-
-# 2. Issue the cert (replace the email address):
-docker compose -f docker-compose.prod.yml run --rm certbot \
-  certonly --webroot -w /var/www/certbot \
-  -d kakicare.duckdns.org \
-  --email your@email.com --agree-tos --no-eff-email
-
-# 3. Bring the full stack up:
-docker compose -f docker-compose.prod.yml up -d --build
-```
-
-**Before step 3**, update `backend/.env` on the EC2 from the template:
-
-```bash
-nano backend/.env
-```
-
-Change / add these values (see `backend/.env.prod.example` for context):
-
-```env
-SESSION_COOKIE_SECURE=True
-CSRF_COOKIE_SECURE=True
-SECURE_HSTS_SECONDS=31536000
-ALLOWED_HOSTS=kakicare.duckdns.org,18.221.83.106
-FRONTEND_BASE_URL=https://kakicare.duckdns.org
-CORS_ALLOWED_ORIGINS=https://kakicare.duckdns.org
-CSRF_TRUSTED_ORIGINS=https://kakicare.duckdns.org
-```
-
-Then restart the web container to pick up the new env vars:
-
-```bash
-docker compose -f docker-compose.prod.yml restart web
-```
-
-Cert renewal is automatic — the `certbot` service checks every 12 hours.
-After a renewal, reload nginx:
-
-```bash
-docker compose -f docker-compose.prod.yml exec nginx nginx -s reload
-```
 
 ### Set up automated deploys (GitHub Actions)
 
@@ -315,61 +235,5 @@ docker compose -f docker-compose.prod.yml restart web
 git checkout <commit-sha>
 docker compose -f docker-compose.prod.yml up -d --build
 ```
-
-## Branching & contribution workflow
-
-We use a two-tier model: a long-lived integration branch (`develop`) and a
-production release branch (`main`).
-
-```
-feature/*  ──PR──▶  develop      CI runs · NO deploy   ← all day-to-day work lands here
-develop    ──PR──▶  main          CI runs on the PR
-merge to main (push)             ──▶  auto-deploy to EC2   ← the ONLY thing that touches prod
-```
-
-- **`main`** — always reflects exactly what is live on the EC2. A merge here
-  triggers the deploy job. Protected; never push directly.
-- **`develop`** — integration branch and repo default. All completed features
-  merge here first. Tested by CI but never deployed.
-- **`feature/*`** (also `fix/*`, `chore/*`) — short-lived branches off `develop`.
-
-Only a push (merge) to `main` deploys — the deploy job in
-`.github/workflows/ci.yml` is gated on
-`github.ref == 'refs/heads/main' && github.event_name == 'push'`. Everything
-else runs the test jobs only.
-
-### Day-to-day
-
-```bash
-git checkout develop && git pull
-git checkout -b feature/my-thing
-# ...work, commit...
-git push -u origin feature/my-thing
-# Open PR  feature/my-thing → develop, get it green + reviewed, merge.
-```
-
-To ship, open a release PR `develop → main`; merging it deploys to the EC2.
-
-> ⚠️ **New environment variables do not deploy automatically.** `backend/.env`
-> lives only on the EC2 and is never overwritten by a deploy. If your change
-> reads a new env var, someone with EC2 access must add it there *before* the
-> deploy, or the `web` container will crash on boot. Coordinate in the release PR.
-
-### Branch protection
-
-`main` and `develop` are protected by GitHub Rulesets (Settings → Rules →
-Rulesets): a PR is required, the `Frontend lint + build` and
-`Backend check + tests` checks must pass, and force-pushes / deletions are
-blocked. `main` additionally requires one approving review.
-
-## Possible future improvements
-
-- **Registry-based deploys.** Today the EC2 builds Docker images during deploy
-  (`up -d --build`). Building images in CI and pushing SHA-tagged images to a
-  registry (e.g. GHCR) would stop building on the production host and give a
-  fast, reliable rollback (redeploy a previous tag instead of rebuilding).
-- **Staging environment** to validate a deploy before it reaches users.
-- **Application-layer encryption of Senior PII** (see `seniors/models.py`
-  `TODO(security)` notes) and **DB backup before auto-migrations**.
 
 

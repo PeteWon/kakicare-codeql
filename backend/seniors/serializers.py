@@ -38,7 +38,6 @@ class SeniorSerializer(serializers.ModelSerializer):
             'notes',
             'next_of_kin_name',
             'next_of_kin_contact',
-            'consent_status',
             'is_active',
             'created_by_id',
             'created_by_email',

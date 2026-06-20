@@ -1,14 +1,11 @@
 # Continuous integration and delivery.
-# frontend + backend jobs run on every PR and on pushes to the long-lived
-# branches (main, develop). Feature branches are tested via their PR, so they
-# are intentionally NOT listed under push — this avoids running CI twice (once
-# for the push event and once for the pull_request event) on the same commit.
+# frontend + backend jobs run on every push and PR.
 # deploy job runs only on main, after both CI jobs pass.
 name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: ['**']
   pull_request:
 
 # Cancel in-progress runs on the same ref when a new commit arrives.
@@ -27,9 +24,9 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
@@ -37,14 +34,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      # Dependency vulnerability scan (D2 dependency-check evidence). Report-only
-      # for now (continue-on-error) so a transitive advisory we can't immediately
-      # fix doesn't block the team's pipeline; findings still show in the logs.
-      # Tighten to blocking by removing continue-on-error once the tree is clean.
-      - name: Dependency audit (npm)
-        continue-on-error: true
-        run: npm audit --audit-level=high
 
       - name: Type-check (tsc --noEmit)
         run: npm run lint
@@ -83,9 +72,9 @@ jobs:
       POSTGRES_HOST: localhost
       POSTGRES_PORT: '5432'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
@@ -93,16 +82,6 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements.txt
-
-      # Dependency vulnerability scan (D2 dependency-check evidence). pip-audit
-      # checks our pinned requirements against the Python advisory database.
-      # Report-only for now (continue-on-error); findings still show in the logs.
-      # Tighten to blocking by removing continue-on-error once the tree is clean.
-      - name: Dependency audit (pip-audit)
-        continue-on-error: true
-        run: |
-          pip install pip-audit
-          pip-audit -r requirements.txt
 
       - name: Django system check
         run: python manage.py check

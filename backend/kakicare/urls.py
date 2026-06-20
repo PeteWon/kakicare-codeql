@@ -16,16 +16,6 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import include, path
-from django_otp.admin import OTPAdminSite
-
-# SECURITY (admin-portal MFA): require a verified TOTP device to access the
-# Django admin, not just a password. Re-classing the default site keeps every
-# existing `@admin.register(...)` registration intact while adding the OTP gate
-# (OTPAdminSite.has_permission also checks request.user.is_verified()).
-# A superuser must have a confirmed TOTP device first — staff/admins enrol one
-# via the app MFA flow; for a fresh bootstrap superuser with no device, use
-# `manage.py addstatictoken <email>` to mint a one-time code for the first login.
-admin.site.__class__ = OTPAdminSite
 
 urlpatterns = [
     path('manage/portal/', admin.site.urls),

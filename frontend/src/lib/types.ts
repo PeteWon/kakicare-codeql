@@ -365,9 +365,6 @@ export interface StaffSeniorSummary {
  * Every GET /api/staff/seniors/<id> is audit-logged server-side as senior.read
  * (AC-06, SR-AUD-01). The frontend does nothing special; the backend records it.
  */
-/** FR-S-13 / SR-S-13: consent must be recorded before matching or scheduling. */
-export type ConsentStatus = 'not_recorded' | 'given' | 'withdrawn';
-
 export interface StaffSeniorDetail extends StaffSeniorSummary {
   phone_number: string;
   accessibility_needs: string;
@@ -375,7 +372,6 @@ export interface StaffSeniorDetail extends StaffSeniorSummary {
   notes: string;
   next_of_kin_name: string | null;
   next_of_kin_contact: string | null;
-  consent_status: ConsentStatus;
   created_by_id: number | null;
   created_by_email: string | null;
 }
@@ -391,7 +387,6 @@ export interface SeniorWritePayload {
   notes: string;
   next_of_kin_name: string;
   next_of_kin_contact: string;
-  consent_status: ConsentStatus;
   is_active?: boolean;
 }
 
