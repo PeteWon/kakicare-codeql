@@ -1,0 +1,42 @@
+# Auto-merge low-risk Dependabot PRs.
+#
+# Patch and minor version updates are low-risk by semver contract (no breaking
+# changes), so once our CI checks pass we let them merge themselves rather than
+# merging each by hand. MAJOR version updates are deliberately excluded — those
+# carry breaking changes and are triaged as scheduled migration work, so they
+# stay open for a human to review/close.
+#
+# Safety: `gh pr merge --auto` does NOT merge immediately. It enables GitHub's
+# auto-merge, which only completes once the branch's required status checks pass.
+# Our develop ruleset requires the frontend + backend checks, so a PR that fails
+# CI (e.g. a breaking major) will never be merged by this workflow.
+#
+# Prerequisite: "Allow auto-merge" must be enabled in
+# Settings -> General -> Pull Requests.
+name: Dependabot auto-merge
+
+on: pull_request
+
+# Least privilege: only the scopes needed to approve + enable auto-merge.
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    # Only act on PRs opened by Dependabot itself.
+    if: github.actor == 'dependabot[bot]'
+    steps:
+      - name: Fetch Dependabot metadata
+        id: meta
+        uses: dependabot/fetch-metadata@v3
+
+      - name: Enable auto-merge for patch & minor updates
+        if: >-
+          steps.meta.outputs.update-type == 'version-update:semver-patch' ||
+          steps.meta.outputs.update-type == 'version-update:semver-minor'
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

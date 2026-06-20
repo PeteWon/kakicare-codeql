@@ -47,6 +47,7 @@ from rest_framework.views import APIView
 
 from audit.services import record_audit
 from matching.models import Match
+from seniors.models import Senior
 from volunteers.permissions import IsApprovedVolunteer, IsStaff
 
 from .models import Session
@@ -178,6 +179,13 @@ class VolunteerSessionListCreateView(_SessionAuditMixin, APIView):
             )
         except Match.DoesNotExist:
             return Response(status=status.HTTP_404_NOT_FOUND)
+
+        # FR-S-13 / SR-S-13: block scheduling if senior's consent is not recorded.
+        if match.senior.consent_status != Senior.ConsentStatus.GIVEN:
+            return Response(
+                {'detail': 'Cannot book a session for a senior whose consent has not been recorded.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         # Reject overlapping bookings for the same volunteer. Two intervals
         # overlap iff a.start < b.end AND a.end > b.start. Cancelled and missed

@@ -11,6 +11,7 @@
 // client is not a security boundary.
 
 import { createBrowserRouter } from 'react-router-dom';
+import { SmartRedirect } from './components/SmartRedirect';
 
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { PublicLayout } from './layouts/PublicLayout';
@@ -23,6 +24,7 @@ import { Register } from './pages/public/Register';
 import { VerifyEmail } from './pages/public/VerifyEmail';
 import { ForgotPassword } from './pages/public/ForgotPassword';
 import { ResetPassword } from './pages/public/ResetPassword';
+import { AcceptInvite } from './pages/public/AcceptInvite';
 import { NotFound } from './pages/public/NotFound';
 
 import { Dashboard } from './pages/volunteer/Dashboard';
@@ -52,6 +54,8 @@ export const router = createBrowserRouter([
       { path: '/verify-email', element: <VerifyEmail /> },
       { path: '/forgot-password', element: <ForgotPassword /> },
       { path: '/reset-password', element: <ResetPassword /> },
+      { path: '/accept-invite', element: <AcceptInvite /> },
+      { path: '/dashboard', element: <SmartRedirect /> },
       { path: '*', element: <NotFound /> },
     ],
   },

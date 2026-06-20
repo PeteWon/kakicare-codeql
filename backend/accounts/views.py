@@ -21,8 +21,17 @@ from rest_framework.response import Response
 from rest_framework.throttling import SimpleRateThrottle
 from rest_framework.views import APIView
 
-from .models import EmailVerificationToken, MFABackupCode, PasswordResetToken, User
+from audit.services import record_audit
+
+from .models import (
+    EmailVerificationToken,
+    MFABackupCode,
+    PasswordResetToken,
+    StaffInviteToken,
+    User,
+)
 from .serializers import (
+    AcceptInviteSerializer,
     LoginSerializer,
     MFAVerifySerializer,
     PasswordResetConfirmSerializer,
@@ -35,17 +44,24 @@ logger = logging.getLogger(__name__)
 
 _TOKEN_EXPIRY_HOURS = 24
 _PASSWORD_RESET_EXPIRY_HOURS = 1
+_STAFF_INVITE_EXPIRY_HOURS = 72
 _BACKUP_CODE_COUNT = 8
 
 _GENERIC_VERIFY_ERROR = 'Invalid or expired verification link.'
 _GENERIC_LOGIN_ERROR = 'Invalid email or password.'
 _GENERIC_RESET_ERROR = 'Invalid or expired reset link.'
+_GENERIC_INVITE_ERROR = 'Invalid or expired invite link.'
 _GENERIC_MFA_ERROR = 'Invalid or expired code.'
 
 # SR-AUTH-06 (timing equalizer): computed once at startup. When an email is
 # not found at login we still run check_password against this value so the
 # Argon2id work happens and response time does not betray email existence.
 _DUMMY_PASSWORD_HASH = make_password('unused-dummy-timing-value')
+
+
+def _get_ip(request) -> str | None:
+    xff = request.META.get('HTTP_X_FORWARDED_FOR')
+    return xff.split(',')[0].strip() if xff else request.META.get('REMOTE_ADDR')
 
 
 def _hash_token(raw_token: str) -> str:
@@ -202,13 +218,16 @@ class LoginView(APIView):
             # SR-AUTH-06 (timing equalizer): run Argon2id against a dummy hash
             # so response time is indistinguishable from a wrong-password attempt.
             check_password(password, _DUMMY_PASSWORD_HASH)
+            record_audit(user=None, action='auth.login.failed', request_ip=_get_ip(request))
             return Response({'status': 'invalid'}, status=status.HTTP_200_OK)
 
         if not user.check_password(password):
+            record_audit(user=user, action='auth.login.failed', request_ip=_get_ip(request))
             return Response({'status': 'invalid'}, status=status.HTTP_200_OK)
 
         # SR-AUTH-06: inactive/unverified → same generic error as wrong password.
         if not user.is_active or not user.is_email_verified:
+            record_audit(user=user, action='auth.login.failed', request_ip=_get_ip(request))
             return Response({'status': 'invalid'}, status=status.HTTP_200_OK)
 
         # Determine MFA requirement based on role and enrolment state.
@@ -243,6 +262,7 @@ class LoginView(APIView):
         # SR-SESS-01: session ID in HttpOnly cookie only — never in JSON body.
         auth.login(request, user)
         request.session.set_expiry(8 * 3600)  # SR-AUTH-05: 8-hour volunteer session
+        record_audit(user=user, action='auth.login.success', request_ip=_get_ip(request))
 
         return Response(
             {'status': 'success', 'role': user.role},
@@ -256,6 +276,7 @@ class LogoutView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+        record_audit(user=request.user, action='auth.logout', request_ip=_get_ip(request))
         auth.logout(request)
         return Response({'detail': 'Logged out.'}, status=status.HTTP_200_OK)
 
@@ -413,6 +434,7 @@ class MFAVerifyView(APIView):
                 confirming_new_device = False
 
         if not verified:
+            record_audit(user=user, action='auth.mfa.verify_failed', request_ip=_get_ip(request))
             return Response(
                 {'detail': _GENERIC_MFA_ERROR},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -423,6 +445,7 @@ class MFAVerifyView(APIView):
             # Completing enrolment: promote the device from unconfirmed to active.
             device.confirmed = True
             device.save(update_fields=['confirmed'])
+            record_audit(user=user, action='auth.mfa.enrolled', request_ip=_get_ip(request))
 
         if is_mid_login:
             # SR-AUTH-03: NOW establish the full authenticated session, after
@@ -431,6 +454,7 @@ class MFAVerifyView(APIView):
             # SR-AUTH-05: 1-hour session for staff, 8-hour for volunteers.
             expiry = 3600 if user.role == User.Role.STAFF else 8 * 3600
             request.session.set_expiry(expiry)
+            record_audit(user=user, action='auth.login.success', request_ip=_get_ip(request))
             return Response(
                 {'status': 'success', 'role': user.role},
                 status=status.HTTP_200_OK,
@@ -485,6 +509,7 @@ class PasswordResetRequestView(APIView):
             token_hash=token_hash,
             expires_at=expires_at,
         )
+        record_audit(user=user, action='auth.password_reset.requested', request_ip=_get_ip(request))
 
         reset_url = f'{settings.FRONTEND_BASE_URL}/reset-password?token={raw_token}'
 
@@ -558,6 +583,7 @@ class PasswordResetConfirmView(APIView):
             # SR-AUTH-01: set_password hashes with Argon2id.
             user.set_password(new_password)
             user.save(update_fields=['password'])
+            record_audit(user=user, action='auth.password_reset.completed', request_ip=_get_ip(request))
 
             # SR-SESS: changing the password invalidates all existing sessions.
             # Django stores a hash of the user's password (_auth_user_hash) in
@@ -602,6 +628,7 @@ class RegisterView(APIView):
                 is_email_verified=False,
             )
             _issue_and_send_verification_token(user)
+            record_audit(user=user, action='auth.register', request_ip=_get_ip(request))
 
         return Response(
             {'detail': 'If this email is valid, a verification link has been sent.'},
@@ -634,6 +661,118 @@ def _issue_and_send_verification_token(user: User) -> None:
         from_email=settings.DEFAULT_FROM_EMAIL,
         recipient_list=[user.email],
     )
+
+
+def issue_and_send_staff_invite(user: User) -> None:
+    """Issue a single-use invite token and email the staff member a set-password link.
+
+    Called when an admin provisions a staff account in the Django portal. Any
+    outstanding invites are expired first so only one link is ever live (also
+    makes this safe to call again as a 'resend'). Public (not underscored) so the
+    admin (admin.py) can call it.
+    """
+    # Expire any outstanding invites before issuing a new one.
+    user.staff_invite_tokens.filter(used_at__isnull=True).update(
+        used_at=timezone.now()
+    )
+
+    raw_token = secrets.token_urlsafe(32)
+    # SR-DATA: only the hash is stored; the raw token goes to email only.
+    token_hash = _hash_token(raw_token)
+    expires_at = timezone.now() + timedelta(hours=_STAFF_INVITE_EXPIRY_HOURS)
+
+    StaffInviteToken.objects.create(
+        user=user,
+        token_hash=token_hash,
+        expires_at=expires_at,
+    )
+
+    # Public path (not under /staff, which is auth-gated) — the invitee is not
+    # logged in yet when they click this link.
+    invite_url = f'{settings.FRONTEND_BASE_URL}/accept-invite?token={raw_token}'
+
+    send_mail(
+        subject='You have been invited to KakiCare',
+        message=(
+            f'Hi {user.full_name},\n\n'
+            f'A KakiCare administrator has created a staff account for you. '
+            f'Click the link below to set your password and activate your account. '
+            f'The link expires in {_STAFF_INVITE_EXPIRY_HOURS} hours.\n\n'
+            f'{invite_url}\n\n'
+            f'If you were not expecting this invitation, you can ignore this email.'
+        ),
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[user.email],
+    )
+
+
+class AcceptInviteView(APIView):
+    """POST /api/auth/accept-invite
+
+    A staff member sets their initial password from an emailed invite token.
+    On success the account is activated and marked email-verified (clicking the
+    link proves control of the inbox). First login then forces TOTP enrolment.
+    """
+
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = AcceptInviteSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        raw_token = serializer.validated_data['token']
+        new_password = serializer.validated_data['new_password']
+        token_hash = _hash_token(raw_token)
+
+        with transaction.atomic():
+            try:
+                token_obj = (
+                    StaffInviteToken.objects
+                    .select_related('user')
+                    .select_for_update()
+                    .get(token_hash=token_hash)
+                )
+            except StaffInviteToken.DoesNotExist:
+                # SR-AUTH-06: single generic error for invalid/expired/used token.
+                return Response(
+                    {'detail': _GENERIC_INVITE_ERROR},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            if not token_obj.is_valid():
+                return Response(
+                    {'detail': _GENERIC_INVITE_ERROR},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            user = token_obj.user
+
+            # Validate against the full policy (SR-AUTH-02), incl. HIBP and the
+            # similarity check against this user's email/name.
+            try:
+                validate_password(new_password, user=user)
+            except DjangoValidationError as exc:
+                return Response(
+                    {'new_password': list(exc.messages)},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            token_obj.used_at = timezone.now()
+            token_obj.save(update_fields=['used_at'])
+
+            # SR-AUTH-01: set_password hashes with Argon2id. Activate the account
+            # and mark email verified — clicking the link proves inbox control.
+            user.set_password(new_password)
+            user.is_active = True
+            user.is_email_verified = True
+            user.save(update_fields=['password', 'is_active', 'is_email_verified'])
+            record_audit(user=user, action='auth.staff_invite.accepted', request_ip=_get_ip(request))
+
+        return Response(
+            {'detail': 'Password set successfully. You can now log in.'},
+            status=status.HTTP_200_OK,
+        )
 
 
 class VerifyEmailView(APIView):
@@ -678,6 +817,7 @@ class VerifyEmailView(APIView):
             user = token_obj.user
             user.is_email_verified = True
             user.save(update_fields=['is_email_verified'])
+            record_audit(user=user, action='auth.email.verified', request_ip=_get_ip(request))
 
         return Response(
             {'detail': 'Email verified successfully.'},

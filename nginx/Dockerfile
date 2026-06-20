@@ -5,7 +5,7 @@
 # never node_modules or the toolchain.
 
 # ---- Stage 1: build the SPA --------------------------------------------------
-FROM node:20-alpine AS frontend-build
+FROM node:26-alpine AS frontend-build
 
 WORKDIR /build
 
@@ -21,7 +21,7 @@ ENV VITE_API_BASE_URL=""
 RUN npm run build
 
 # ---- Stage 2: nginx image ----------------------------------------------------
-FROM nginx:1.27-alpine
+FROM nginx:1.31-alpine
 
 # Remove the default site config; replace with ours.
 RUN rm -f /etc/nginx/conf.d/default.conf
@@ -34,6 +34,10 @@ COPY --from=frontend-build /build/dist /usr/share/nginx/html
 # docker-compose.prod.yml). We just ensure the mount point exists.
 RUN mkdir -p /usr/share/nginx/static
 
+# Certbot writes HTTP-01 challenge files here; nginx serves them on port 80.
+RUN mkdir -p /var/www/certbot
+
 EXPOSE 80
+EXPOSE 443
 
 # Default CMD from the nginx base image is fine.

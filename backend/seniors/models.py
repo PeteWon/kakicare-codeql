@@ -20,6 +20,11 @@ from django.db import models
 class Senior(models.Model):
     """An elderly participant in the befriending programme."""
 
+    class ConsentStatus(models.TextChoices):
+        NOT_RECORDED = 'not_recorded', 'Not Recorded'
+        GIVEN        = 'given',        'Given'
+        WITHDRAWN    = 'withdrawn',    'Withdrawn'
+
     full_name = models.CharField(max_length=255)
 
     # TODO(security): encrypt at application layer before deployment (SR-DATA-05)
@@ -39,6 +44,15 @@ class Senior(models.Model):
     next_of_kin_name = models.CharField(max_length=255, blank=True)
     # TODO(security): encrypt at application layer before deployment (SR-DATA-05)
     next_of_kin_contact = models.CharField(max_length=64, blank=True)
+
+    # FR-S-13 / SR-S-13: consent must be recorded before a senior can be matched
+    # or have sessions scheduled. Defaults to not_recorded so existing records
+    # are not silently assumed to have consent.
+    consent_status = models.CharField(
+        max_length=20,
+        choices=ConsentStatus.choices,
+        default=ConsentStatus.NOT_RECORDED,
+    )
 
     is_active = models.BooleanField(default=True)
 
