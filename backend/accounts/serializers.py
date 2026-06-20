@@ -104,3 +104,16 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
 
     token = serializers.CharField(min_length=1)
     new_password = serializers.CharField(write_only=True, min_length=12)
+
+
+class AcceptInviteSerializer(serializers.Serializer):
+    """Input for POST /api/auth/accept-invite.
+
+    A staff member sets their initial password from an emailed invite token.
+    SR-AUTH-02: minimum 12 characters enforced here as a fast rejection; the
+    full AUTH_PASSWORD_VALIDATORS suite (incl. HIBP) runs in the view where the
+    user object is available (enables the similarity check).
+    """
+
+    token = serializers.CharField(min_length=1)
+    new_password = serializers.CharField(write_only=True, min_length=12)

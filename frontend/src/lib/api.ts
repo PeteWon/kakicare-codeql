@@ -293,6 +293,13 @@ export const api = {
     });
   },
 
+  async acceptInvite(token: string, newPassword: string): Promise<void> {
+    await apiFetch('/api/auth/accept-invite', {
+      method: 'POST',
+      body: { token, new_password: newPassword },
+    });
+  },
+
   // --- Volunteer profile completion -----------------------------------------
   // SECURITY: file-type/size checks in FileUpload are USABILITY ONLY — the
   // backend must independently validate content type, enforce size limits, and

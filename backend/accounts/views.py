@@ -23,8 +23,15 @@ from rest_framework.views import APIView
 
 from audit.services import record_audit
 
-from .models import EmailVerificationToken, MFABackupCode, PasswordResetToken, User
+from .models import (
+    EmailVerificationToken,
+    MFABackupCode,
+    PasswordResetToken,
+    StaffInviteToken,
+    User,
+)
 from .serializers import (
+    AcceptInviteSerializer,
     LoginSerializer,
     MFAVerifySerializer,
     PasswordResetConfirmSerializer,
@@ -37,11 +44,13 @@ logger = logging.getLogger(__name__)
 
 _TOKEN_EXPIRY_HOURS = 24
 _PASSWORD_RESET_EXPIRY_HOURS = 1
+_STAFF_INVITE_EXPIRY_HOURS = 72
 _BACKUP_CODE_COUNT = 8
 
 _GENERIC_VERIFY_ERROR = 'Invalid or expired verification link.'
 _GENERIC_LOGIN_ERROR = 'Invalid email or password.'
 _GENERIC_RESET_ERROR = 'Invalid or expired reset link.'
+_GENERIC_INVITE_ERROR = 'Invalid or expired invite link.'
 _GENERIC_MFA_ERROR = 'Invalid or expired code.'
 
 # SR-AUTH-06 (timing equalizer): computed once at startup. When an email is
@@ -652,6 +661,118 @@ def _issue_and_send_verification_token(user: User) -> None:
         from_email=settings.DEFAULT_FROM_EMAIL,
         recipient_list=[user.email],
     )
+
+
+def issue_and_send_staff_invite(user: User) -> None:
+    """Issue a single-use invite token and email the staff member a set-password link.
+
+    Called when an admin provisions a staff account in the Django portal. Any
+    outstanding invites are expired first so only one link is ever live (also
+    makes this safe to call again as a 'resend'). Public (not underscored) so the
+    admin (admin.py) can call it.
+    """
+    # Expire any outstanding invites before issuing a new one.
+    user.staff_invite_tokens.filter(used_at__isnull=True).update(
+        used_at=timezone.now()
+    )
+
+    raw_token = secrets.token_urlsafe(32)
+    # SR-DATA: only the hash is stored; the raw token goes to email only.
+    token_hash = _hash_token(raw_token)
+    expires_at = timezone.now() + timedelta(hours=_STAFF_INVITE_EXPIRY_HOURS)
+
+    StaffInviteToken.objects.create(
+        user=user,
+        token_hash=token_hash,
+        expires_at=expires_at,
+    )
+
+    # Public path (not under /staff, which is auth-gated) — the invitee is not
+    # logged in yet when they click this link.
+    invite_url = f'{settings.FRONTEND_BASE_URL}/accept-invite?token={raw_token}'
+
+    send_mail(
+        subject='You have been invited to KakiCare',
+        message=(
+            f'Hi {user.full_name},\n\n'
+            f'A KakiCare administrator has created a staff account for you. '
+            f'Click the link below to set your password and activate your account. '
+            f'The link expires in {_STAFF_INVITE_EXPIRY_HOURS} hours.\n\n'
+            f'{invite_url}\n\n'
+            f'If you were not expecting this invitation, you can ignore this email.'
+        ),
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        recipient_list=[user.email],
+    )
+
+
+class AcceptInviteView(APIView):
+    """POST /api/auth/accept-invite
+
+    A staff member sets their initial password from an emailed invite token.
+    On success the account is activated and marked email-verified (clicking the
+    link proves control of the inbox). First login then forces TOTP enrolment.
+    """
+
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = AcceptInviteSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        raw_token = serializer.validated_data['token']
+        new_password = serializer.validated_data['new_password']
+        token_hash = _hash_token(raw_token)
+
+        with transaction.atomic():
+            try:
+                token_obj = (
+                    StaffInviteToken.objects
+                    .select_related('user')
+                    .select_for_update()
+                    .get(token_hash=token_hash)
+                )
+            except StaffInviteToken.DoesNotExist:
+                # SR-AUTH-06: single generic error for invalid/expired/used token.
+                return Response(
+                    {'detail': _GENERIC_INVITE_ERROR},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            if not token_obj.is_valid():
+                return Response(
+                    {'detail': _GENERIC_INVITE_ERROR},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            user = token_obj.user
+
+            # Validate against the full policy (SR-AUTH-02), incl. HIBP and the
+            # similarity check against this user's email/name.
+            try:
+                validate_password(new_password, user=user)
+            except DjangoValidationError as exc:
+                return Response(
+                    {'new_password': list(exc.messages)},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            token_obj.used_at = timezone.now()
+            token_obj.save(update_fields=['used_at'])
+
+            # SR-AUTH-01: set_password hashes with Argon2id. Activate the account
+            # and mark email verified — clicking the link proves inbox control.
+            user.set_password(new_password)
+            user.is_active = True
+            user.is_email_verified = True
+            user.save(update_fields=['password', 'is_active', 'is_email_verified'])
+            record_audit(user=user, action='auth.staff_invite.accepted', request_ip=_get_ip(request))
+
+        return Response(
+            {'detail': 'Password set successfully. You can now log in.'},
+            status=status.HTTP_200_OK,
+        )
 
 
 class VerifyEmailView(APIView):

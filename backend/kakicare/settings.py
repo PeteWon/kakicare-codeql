@@ -45,8 +45,9 @@ INSTALLED_APPS = [
     # Third-party
     'corsheaders',               # CORS headers for the React SPA (different origin in dev).
     'rest_framework',
-    'django_otp',  # TOTP MFA framework (installed; no MFA logic wired yet).
-    'django_otp.plugins.otp_totp',  # TOTP device plugin.
+    'django_otp',  # TOTP MFA framework.
+    'django_otp.plugins.otp_totp',  # TOTP device plugin (app + admin-portal MFA).
+    'django_otp.plugins.otp_static',  # Static recovery tokens — bootstrap admin-portal MFA.
 
     # Local apps
     'accounts.apps.AccountsConfig',
