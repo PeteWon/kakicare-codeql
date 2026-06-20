@@ -208,6 +208,13 @@ class StaffMatchListCreateView(_MatchAuditMixin, APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # FR-S-13 / SR-S-13: consent must be recorded before a senior can be matched.
+        if senior.consent_status != Senior.ConsentStatus.GIVEN:
+            return Response(
+                {'senior_id': 'Cannot propose a match for a senior whose consent has not been recorded.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         # Let the DB partial unique constraint enforce the no-duplicate rule
         # (a race-condition-safe approach: check-then-create has a TOCTOU gap;
         # catching IntegrityError from the DB is atomic).

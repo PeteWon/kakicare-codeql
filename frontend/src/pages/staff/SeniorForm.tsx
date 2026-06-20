@@ -8,7 +8,7 @@ import type { ChangeEvent, FormEvent } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError } from '@/lib/api';
-import type { SeniorWritePayload } from '@/lib/types';
+import type { ConsentStatus, SeniorWritePayload } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -21,6 +21,12 @@ const SG_LANGUAGES = [
   'Hokkien', 'Teochew', 'Cantonese', 'Hakka',
 ];
 
+const CONSENT_LABELS: Record<ConsentStatus, string> = {
+  not_recorded: 'Not Recorded',
+  given: 'Given',
+  withdrawn: 'Withdrawn',
+};
+
 const BLANK: SeniorWritePayload = {
   full_name: '',
   address: '',
@@ -31,6 +37,7 @@ const BLANK: SeniorWritePayload = {
   notes: '',
   next_of_kin_name: '',
   next_of_kin_contact: '',
+  consent_status: 'not_recorded',
   is_active: true,
 };
 
@@ -185,6 +192,7 @@ export function SeniorForm() {
         notes: data.notes,
         next_of_kin_name: data.next_of_kin_name ?? '',
         next_of_kin_contact: data.next_of_kin_contact ?? '',
+        consent_status: data.consent_status ?? 'not_recorded',
         is_active: data.is_active,
       });
     } catch (err) {
@@ -464,6 +472,28 @@ export function SeniorForm() {
             onChange={(v) => set('availability', v)}
             disabled={submitting}
           />
+        </div>
+
+        {/* ---- Consent ---- */}
+        <div className="rounded-2xl border border-cream-300 bg-white p-5 shadow-sm">
+          <h2 className="mb-3 text-base font-semibold text-primary-900">Consent</h2>
+          <Field label="Consent status" htmlFor="consent_status" required>
+            <select
+              id="consent_status"
+              name="consent_status"
+              value={values.consent_status}
+              onChange={onChange}
+              disabled={submitting}
+              className={inputCls}
+            >
+              {(Object.entries(CONSENT_LABELS) as [ConsentStatus, string][]).map(([val, label]) => (
+                <option key={val} value={val}>{label}</option>
+              ))}
+            </select>
+          </Field>
+          <p className="mt-2 text-xs text-primary-400">
+            Matching and session scheduling are blocked until consent is set to Given (FR-S-13).
+          </p>
         </div>
 
         {/* ---- Status (edit only — toggle is_active) ---- */}

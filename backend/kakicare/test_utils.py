@@ -86,8 +86,19 @@ def create_approved_volunteer(email='approved@example.com', **kwargs):
     return user
 
 
-def create_senior(created_by, *, full_name='Mdm Tan Bee Hoon', address='Blk 1 Tampines St 11 #01-01'):
-    """Create a Senior record owned by the given staff user."""
+def create_senior(
+    created_by,
+    *,
+    full_name='Mdm Tan Bee Hoon',
+    address='Blk 1 Tampines St 11 #01-01',
+    consent_status=Senior.ConsentStatus.GIVEN,
+):
+    """Create a Senior record owned by the given staff user.
+
+    Defaults to consent_status=GIVEN so tests that exercise matching and session
+    booking aren't blocked by the consent gate (FR-S-13). Pass
+    consent_status=Senior.ConsentStatus.NOT_RECORDED to test the gate itself.
+    """
     return Senior.objects.create(
         full_name=full_name,
         address=address,
@@ -96,6 +107,7 @@ def create_senior(created_by, *, full_name='Mdm Tan Bee Hoon', address='Blk 1 Ta
         next_of_kin_name='Tan Wei Ming',
         next_of_kin_contact='+6590000001',
         created_by=created_by,
+        consent_status=consent_status,
     )
 
 

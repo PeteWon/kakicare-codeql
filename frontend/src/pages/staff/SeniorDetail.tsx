@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { api, ApiError } from '@/lib/api';
-import type { StaffSeniorDetail } from '@/lib/types';
+import type { ConsentStatus, StaffSeniorDetail } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -25,6 +25,18 @@ function formatDateTime(iso: string): string {
     minute: '2-digit',
   });
 }
+
+const CONSENT_STYLES: Record<ConsentStatus, string> = {
+  not_recorded: 'bg-amber-100 text-amber-800',
+  given:        'bg-green-100 text-green-800',
+  withdrawn:    'bg-red-100 text-red-800',
+};
+
+const CONSENT_LABELS: Record<ConsentStatus, string> = {
+  not_recorded: 'Consent: Not Recorded',
+  given:        'Consent: Given',
+  withdrawn:    'Consent: Withdrawn',
+};
 
 function InfoRow({ label, value }: { label: string; value?: string | null }) {
   return (
@@ -222,6 +234,11 @@ export function SeniorDetail() {
               }`}
             >
               {senior.is_active ? 'Active' : 'Inactive'}
+            </span>
+            <span
+              className={`rounded-full px-3 py-1 text-sm font-medium ${CONSENT_STYLES[senior.consent_status ?? 'not_recorded']}`}
+            >
+              {CONSENT_LABELS[senior.consent_status ?? 'not_recorded']}
             </span>
             <Link
               to={`/staff/seniors/${senior.id}/edit`}
