@@ -46,7 +46,7 @@ export function ForgotPassword() {
 
   if (pageState === 'sent') {
     return (
-      <section className="mx-auto max-w-md py-8">
+      <section className="mx-auto max-w-md py-8 my-auto">
         <Card className="space-y-4 text-center">
           <h1 className="font-serif text-2xl font-semibold text-primary-900">
             Check your email
