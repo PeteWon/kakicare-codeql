@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import QRCode from 'react-qr-code';
 import { Button, Card, TextField } from '@/components';
 import { api, ApiError } from '@/lib/api';
 import { fetchCurrentUser, homePathForRole } from '@/lib/auth';
@@ -235,9 +236,9 @@ export function Login() {
           Set up two-factor authentication
         </h1>
         <p className="mt-2 text-primary-600">
-          Your account requires MFA. Add the key below to your authenticator app
-          (Google Authenticator, Aegis, etc.), save your backup codes, then enter
-          the 6-digit code to complete sign-in.
+          Your account requires MFA. Scan the QR code with your authenticator app
+          (Microsoft Authenticator, Google Authenticator, etc.), save your backup
+          codes, then enter the 6-digit code to complete sign-in.
         </p>
 
         <Card className="mt-6 space-y-5">
@@ -260,33 +261,25 @@ export function Login() {
             </div>
           ) : (
             <>
-              <div className="space-y-3">
+              <div className="space-y-4">
+                <div>
+                  <p className="text-sm font-medium text-primary-800">Scan with your authenticator app</p>
+                  <div className="mt-2 flex justify-center rounded-xl bg-white p-4 shadow-sm ring-1 ring-cream-200">
+                    <QRCode value={setupData.config_url} size={180} />
+                  </div>
+                </div>
+
                 <div>
                   <p className="text-sm font-medium text-primary-800">
-                    Secret key{' '}
+                    Can't scan?{' '}
                     <span className="font-normal text-primary-500">
-                      (enter manually in your authenticator app)
+                      Enter this key manually in your authenticator app.
                     </span>
                   </p>
                   <p className="mt-1 break-all rounded-xl bg-cream-100 px-3 py-2 font-mono text-sm text-primary-900 select-all">
                     {setupData.secret_key}
                   </p>
                   <p className="mt-1 text-xs text-primary-500">Issuer: KakiCare</p>
-                </div>
-
-                <div>
-                  <p className="text-sm font-medium text-primary-800">
-                    Provisioning URI{' '}
-                    <span className="font-normal text-primary-500">
-                      (for apps that support URI / QR import, e.g. Aegis)
-                    </span>
-                  </p>
-                  {/* No QR library per project stack constraint — show URI as
-                      copyable text. Apps like Aegis accept otpauth:// URIs via
-                      manual import. */}
-                  <p className="mt-1 break-all rounded-xl bg-cream-100 px-3 py-2 font-mono text-xs text-primary-700 select-all">
-                    {setupData.config_url}
-                  </p>
                 </div>
               </div>
 
