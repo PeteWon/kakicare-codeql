@@ -137,6 +137,7 @@ export function ResetPassword() {
             name="password"
             autoComplete="new-password"
             autoFocus
+            showToggle
             hint="At least 12 characters."
             value={password}
             error={passwordError}
@@ -151,6 +152,7 @@ export function ResetPassword() {
             type="password"
             name="confirmPassword"
             autoComplete="new-password"
+            showToggle
             value={confirmPassword}
             error={confirmPasswordError}
             onChange={(e) => {
