@@ -231,7 +231,7 @@ export function Login() {
 
   if (step === 'mfa_setup') {
     return (
-      <section className="mx-auto max-w-md py-8">
+      <section className="mx-auto max-w-md py-8 my-auto">
         <h1 className="text-3xl font-semibold text-primary-900">
           Set up two-factor authentication
         </h1>
@@ -362,7 +362,7 @@ export function Login() {
   if (step === 'mfa') {
     void mfaRole; // role captured for potential future use (e.g. showing volunteer vs staff label)
     return (
-      <section className="mx-auto max-w-md py-8">
+      <section className="mx-auto max-w-md py-8 my-auto">
         <h1 className="text-3xl font-semibold text-primary-900">
           Two-factor authentication
         </h1>
@@ -483,6 +483,7 @@ export function Login() {
             type="password"
             name="password"
             autoComplete="current-password"
+            showToggle
             value={password}
             error={passwordError}
             onChange={(e) => setPassword(e.target.value)}
