@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { Button, Card, TextField } from '@/components';
 import { api, ApiError } from '@/lib/api';
+import { usePageTitle } from '@/lib/usePageTitle';
 import {
   email as emailRule,
   matches,
@@ -26,6 +27,7 @@ import {
 type PageState = 'form' | 'pending';
 
 export function Register() {
+  usePageTitle('Volunteer with us');
   const [pageState, setPageState] = useState<PageState>('form');
 
   const [fullName, setFullName] = useState('');

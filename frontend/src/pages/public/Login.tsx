@@ -7,6 +7,7 @@ import { api, ApiError } from '@/lib/api';
 import { fetchCurrentUser, homePathForRole } from '@/lib/auth';
 import type { MfaSetupResult, UserRole } from '@/lib/types';
 import { email as emailRule, required, validate } from '@/lib/validation';
+import { usePageTitle } from '@/lib/usePageTitle';
 
 // SECURITY NOTES (KakiCare login):
 //
@@ -34,6 +35,7 @@ const GENERIC_MFA_ERROR = 'Invalid code. Please try again.';
 type Step = 'credentials' | 'mfa' | 'mfa_setup';
 
 export function Login() {
+  usePageTitle('Sign in');
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   // Only redirect to relative paths — prevents open-redirect attacks.

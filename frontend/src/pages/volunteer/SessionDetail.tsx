@@ -25,6 +25,7 @@ import type { FormEvent } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api, ApiError } from '@/lib/api';
+import { usePageTitle } from '@/lib/usePageTitle';
 import { Button, Card, CardTitle } from '@/components';
 import type { SessionStatus, VolunteerSession } from '@/lib/types';
 
@@ -383,6 +384,7 @@ function CheckOutForm({
 // ---------------------------------------------------------------------------
 
 export function SessionDetail() {
+  usePageTitle('Session');
   const { id } = useParams<{ id: string }>();
   const numericId = Number(id);
 

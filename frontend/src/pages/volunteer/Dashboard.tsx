@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '@/lib/api';
+import { usePageTitle } from '@/lib/usePageTitle';
 import { Button, Card, CardTitle } from '@/components';
 import type {
   ApplicationStatus,
@@ -224,6 +225,7 @@ function SessionsSummary({ sessions }: { sessions: VolunteerSession[] }) {
 // ---------------------------------------------------------------------------
 
 export function Dashboard() {
+  usePageTitle('Dashboard');
   const [pageLoading, setPageLoading] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
 

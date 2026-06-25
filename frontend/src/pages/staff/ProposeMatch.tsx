@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, ApiError } from '@/lib/api';
+import { usePageTitle } from '@/lib/usePageTitle';
 
 // ---------------------------------------------------------------------------
 // Searchable select — a text filter above a native <select> listbox.
@@ -107,6 +108,7 @@ function SearchableSelect({
 // ---------------------------------------------------------------------------
 
 export function ProposeMatch() {
+  usePageTitle('Propose a match');
   const navigate = useNavigate();
 
   // Dropdown data

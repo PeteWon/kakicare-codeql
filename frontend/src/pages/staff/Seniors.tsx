@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '@/lib/api';
+import { usePageTitle } from '@/lib/usePageTitle';
 import type { Paginated, StaffSeniorSummary } from '@/lib/types';
 
 function formatDate(iso: string): string {
@@ -26,6 +27,7 @@ const ACTIVE_OPTIONS: { value: ActiveFilter; label: string }[] = [
 ];
 
 export function Seniors() {
+  usePageTitle('Seniors');
   const [searchParams, setSearchParams] = useSearchParams();
   const searchQ = searchParams.get('search') ?? '';
   const activeFilter = (searchParams.get('active') ?? 'active') as ActiveFilter;

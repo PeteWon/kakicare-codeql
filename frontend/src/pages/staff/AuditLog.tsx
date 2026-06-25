@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '@/lib/api';
+import { usePageTitle } from '@/lib/usePageTitle';
 import type { Paginated, StaffAuditLogEntry } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
@@ -56,6 +57,7 @@ const TARGET_OPTIONS = [
 // ---------------------------------------------------------------------------
 
 export function AuditLog() {
+  usePageTitle('Audit log');
   const [searchParams, setSearchParams] = useSearchParams();
   const targetTypeFilter = searchParams.get('target_type') ?? '';
   const actionFilter = searchParams.get('action') ?? '';

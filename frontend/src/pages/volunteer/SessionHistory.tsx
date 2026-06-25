@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, ApiError } from '@/lib/api';
+import { usePageTitle } from '@/lib/usePageTitle';
 import { Button, Card, CardTitle } from '@/components';
 import type { SessionStatus, VolunteerSession } from '@/lib/types';
 
@@ -123,6 +124,7 @@ function SessionCard({ session }: { session: VolunteerSession }) {
 // ---------------------------------------------------------------------------
 
 export function SessionHistory() {
+  usePageTitle('Session history');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sessions, setSessions] = useState<VolunteerSession[]>([]);

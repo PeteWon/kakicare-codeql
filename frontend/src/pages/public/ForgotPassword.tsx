@@ -15,10 +15,12 @@ import { Link } from 'react-router-dom';
 import { Button, Card, TextField } from '@/components';
 import { api } from '@/lib/api';
 import { email as emailRule, required, validate } from '@/lib/validation';
+import { usePageTitle } from '@/lib/usePageTitle';
 
 type PageState = 'form' | 'sent';
 
 export function ForgotPassword() {
+  usePageTitle('Reset password');
   const [pageState, setPageState] = useState<PageState>('form');
   const [email, setEmail] = useState('');
   const [emailError, setEmailError] = useState<string | null>(null);

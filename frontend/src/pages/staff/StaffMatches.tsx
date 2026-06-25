@@ -9,6 +9,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '@/lib/api';
+import { usePageTitle } from '@/lib/usePageTitle';
 import type { Paginated, StaffMatch, StaffMatchStatus } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
@@ -75,6 +76,7 @@ const FILTER_OPTIONS: { value: '' | StaffMatchStatus; label: string }[] = [
 // ---------------------------------------------------------------------------
 
 export function StaffMatches() {
+  usePageTitle('Matches');
   const [searchParams, setSearchParams] = useSearchParams();
   const statusFilter = (searchParams.get('status') ?? 'proposed') as StaffMatchStatus | '';
   const currentPage = Number(searchParams.get('page') ?? '1');

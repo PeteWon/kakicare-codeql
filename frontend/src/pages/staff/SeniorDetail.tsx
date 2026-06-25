@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { api, ApiError } from '@/lib/api';
+import { usePageTitle } from '@/lib/usePageTitle';
 import type { ConsentStatus, StaffSeniorDetail } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
@@ -98,6 +99,7 @@ function AvailabilityGrid({ availability }: { availability: Record<string, strin
 // ---------------------------------------------------------------------------
 
 export function SeniorDetail() {
+  usePageTitle('Senior');
   const { id } = useParams<{ id: string }>();
   const numericId = Number(id);
   const location = useLocation();

@@ -9,6 +9,7 @@ import type { FormEvent } from 'react';
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api, ApiError } from '@/lib/api';
+import { usePageTitle } from '@/lib/usePageTitle';
 import { Button, Card } from '@/components';
 import type { VolunteerMatch } from '@/lib/types';
 
@@ -44,6 +45,7 @@ function todayISO(): string {
 // ---------------------------------------------------------------------------
 
 export function BookSession() {
+  usePageTitle('Book a session');
   const { matchId } = useParams<{ matchId: string }>();
   const numericMatchId = Number(matchId);
 

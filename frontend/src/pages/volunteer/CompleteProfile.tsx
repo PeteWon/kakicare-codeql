@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Button, Card, FileUpload, MultiSelect, TextField } from '@/components';
 import { api } from '@/lib/api';
+import { usePageTitle } from '@/lib/usePageTitle';
 import { phoneSG, required, validate } from '@/lib/validation';
 import type { ApplicationStatus, Region, TimeBlock, Weekday } from '@/lib/types';
 
@@ -78,6 +79,7 @@ function StatusDisplay({ status }: { status: Exclude<ApplicationStatus, 'incompl
 // ---------------------------------------------------------------------------
 
 export function CompleteProfile() {
+  usePageTitle('Complete your profile');
   type PageState = 'loading' | 'form' | 'status' | 'load_error';
   const [pageState, setPageState] = useState<PageState>('loading');
   const [appStatus, setAppStatus] = useState<ApplicationStatus>('incomplete');
