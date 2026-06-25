@@ -98,6 +98,16 @@ export function CompleteProfile() {
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [scrollToErrorCount, setScrollToErrorCount] = useState(0);
+
+  useEffect(() => {
+    if (scrollToErrorCount === 0) return;
+    const firstError = document.querySelector<HTMLElement>('[data-error="true"]');
+    if (firstError) {
+      firstError.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      firstError.querySelector<HTMLElement>('input, button, textarea, select')?.focus({ preventScroll: true });
+    }
+  }, [scrollToErrorCount]);
 
   useEffect(() => {
     api.getVolunteerProfile()
@@ -140,7 +150,10 @@ export function CompleteProfile() {
 
     const next = buildErrors();
     setErrors(next);
-    if (Object.values(next).some(Boolean)) return;
+    if (Object.values(next).some(Boolean)) {
+      setScrollToErrorCount((c) => c + 1);
+      return;
+    }
 
     if (!identityDoc || !declarationDoc) return;
 

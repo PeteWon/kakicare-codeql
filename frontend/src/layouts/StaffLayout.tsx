@@ -40,13 +40,13 @@ export function StaffLayout() {
   return (
     <div className="flex min-h-screen bg-cream">
       {/* ---- Sidebar (md+) ---- */}
-      <aside className="hidden w-60 shrink-0 flex-col border-r border-cream-300 bg-white md:flex">
+      <aside className="hidden w-60 shrink-0 flex-col border-r border-cream-300 bg-white md:flex sticky top-0 h-screen">
         <div className="px-5 py-5 font-serif text-xl font-semibold text-primary-700">
           KakiCare
           <span className="ml-1 align-top font-sans text-xs text-primary-400">Staff</span>
         </div>
 
-        <nav className="flex flex-1 flex-col gap-1 px-3">
+        <nav className="flex flex-1 flex-col gap-1 overflow-y-auto px-3">
           {NAV_ITEMS.map((item) => (
             <NavLink key={item.to} to={item.to} end={item.end} className={navLinkClass}>
               {item.label}
