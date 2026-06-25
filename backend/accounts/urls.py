@@ -6,6 +6,7 @@ from .views import (
     LogoutView,
     MeView,
     MFASetupView,
+    MFAResetRequestView,
     MFAVerifyView,
     PasswordResetConfirmView,
     PasswordResetRequestView,
@@ -22,6 +23,7 @@ urlpatterns = [
     path('me', MeView.as_view(), name='auth-me'),
     path('mfa/setup', MFASetupView.as_view(), name='auth-mfa-setup'),
     path('mfa/verify', MFAVerifyView.as_view(), name='auth-mfa-verify'),
+    path('mfa-reset/request', MFAResetRequestView.as_view(), name='auth-mfa-reset-request'),
     path('password-reset/request', PasswordResetRequestView.as_view(), name='auth-password-reset-request'),
     path('password-reset/confirm', PasswordResetConfirmView.as_view(), name='auth-password-reset-confirm'),
 ]

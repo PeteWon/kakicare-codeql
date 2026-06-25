@@ -106,6 +106,33 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
     new_password = serializers.CharField(write_only=True, min_length=12)
 
 
+class MFAResetRequestSerializer(serializers.Serializer):
+    """Input for POST /api/auth/mfa-reset/request.
+
+    The requester proves identity with their email and password so they can ask
+    for an MFA reset even if they no longer have access to the authenticator.
+    """
+
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True)
+
+    def validate_email(self, value):
+        return value.strip().lower()
+
+
+class MFAResetResolveSerializer(serializers.Serializer):
+    """Input for POST /api/staff/mfa-reset/requests/<id>/resolve.
+
+    Admin fallback resets must record the out-of-band verification method and
+    outcome. Staff-level resets may omit those fields when no escalation is
+    required.
+    """
+
+    verification_method = serializers.CharField(required=False, allow_blank=False, max_length=255)
+    verification_outcome = serializers.CharField(required=False, allow_blank=False, max_length=255)
+    reason = serializers.CharField(required=False, allow_blank=True, max_length=255)
+
+
 class AcceptInviteSerializer(serializers.Serializer):
     """Input for POST /api/auth/accept-invite.
 

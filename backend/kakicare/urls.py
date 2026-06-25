@@ -34,6 +34,7 @@ urlpatterns = [
     path('api/volunteer/', include('matching.volunteer_urls')),
     path('api/volunteer/', include('sessions.volunteer_urls')),
     path('api/staff/', include('volunteers.staff_urls')),
+    path('api/staff/', include('accounts.staff_urls')),
     path('api/staff/', include('seniors.staff_urls')),
     path('api/staff/', include('matching.staff_urls')),
     path('api/staff/', include('sessions.staff_urls')),

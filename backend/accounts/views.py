@@ -25,6 +25,7 @@ from audit.services import record_audit
 
 from .models import (
     EmailVerificationToken,
+    MFAResetRequest,
     MFABackupCode,
     PasswordResetToken,
     StaffInviteToken,
@@ -33,6 +34,8 @@ from .models import (
 from .serializers import (
     AcceptInviteSerializer,
     LoginSerializer,
+    MFAResetRequestSerializer,
+    MFAResetResolveSerializer,
     MFAVerifySerializer,
     PasswordResetConfirmSerializer,
     PasswordResetRequestSerializer,
@@ -595,6 +598,166 @@ class PasswordResetConfirmView(APIView):
 
         return Response(
             {'detail': 'Password reset successfully.'},
+            status=status.HTTP_200_OK,
+        )
+
+
+# ---------------------------------------------------------------------------
+# MFA reset request / resolve
+# ---------------------------------------------------------------------------
+
+def _clear_user_mfa(user: User) -> None:
+    """Remove all TOTP devices and backup codes for a user."""
+    TOTPDevice.objects.filter(user=user).delete()
+    user.mfa_backup_codes.all().delete()
+
+
+class MFAResetRequestView(APIView):
+    """POST /api/auth/mfa-reset/request
+
+    A user who has lost their authenticator can verify with their password and
+    create a pending MFA reset request for their own account.
+    """
+
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = MFAResetRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(
+                {'detail': 'If the credentials are valid, the reset request was submitted.'},
+                status=status.HTTP_200_OK,
+            )
+
+        email = serializer.validated_data['email']
+        password = serializer.validated_data['password']
+
+        try:
+            user = User.objects.get(email=email, is_active=True, is_email_verified=True)
+        except User.DoesNotExist:
+            return Response(
+                {'detail': 'If the credentials are valid, the reset request was submitted.'},
+                status=status.HTTP_200_OK,
+            )
+
+        if not user.check_password(password):
+            return Response(
+                {'detail': 'If the credentials are valid, the reset request was submitted.'},
+                status=status.HTTP_200_OK,
+            )
+
+        request_obj = MFAResetRequest.objects.create(
+            requester=user,
+            target_user=user,
+            reason='lost_authenticator',
+        )
+        record_audit(
+            user=user,
+            action='auth.mfa.reset.requested',
+            target_type='MFAResetRequest',
+            target_id=request_obj.pk,
+            request_ip=_get_ip(request),
+        )
+
+        return Response(
+            {
+                'detail': 'If the credentials are valid, the reset request was submitted.',
+                'request_id': request_obj.pk,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class MFAResetResolveView(APIView):
+    """POST /api/staff/mfa-reset/requests/<id>/resolve
+
+    Staff may resolve requests for regular app accounts. If the target account
+    is a superuser, an admin must provide the out-of-band verification method
+    and outcome before the reset is executed.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk: int):
+        if not (request.user.role == User.Role.STAFF):
+            return Response({'detail': 'Forbidden.'}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = MFAResetResolveSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            try:
+                reset_request = (
+                    MFAResetRequest.objects.select_related('requester', 'target_user')
+                    .select_for_update()
+                    .get(pk=pk)
+                )
+            except MFAResetRequest.DoesNotExist:
+                return Response({'detail': 'Reset request not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+            if reset_request.status != MFAResetRequest.Status.PENDING:
+                return Response(
+                    {'detail': 'Reset request has already been resolved.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            target_user = reset_request.target_user
+            is_admin_actor = bool(request.user.is_superuser)
+            needs_admin_verification = is_admin_actor
+            verification_method = serializer.validated_data.get('verification_method', '').strip()
+            verification_outcome = serializer.validated_data.get('verification_outcome', '').strip()
+
+            if not is_admin_actor and target_user.is_superuser:
+                return Response({'detail': 'Forbidden.'}, status=status.HTTP_403_FORBIDDEN)
+
+            if is_admin_actor:
+                if not verification_method or not verification_outcome:
+                    return Response(
+                        {
+                            'detail': (
+                                'Out-of-band verification method and outcome are required '
+                                'for admin fallback MFA resets.'
+                            )
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+            _clear_user_mfa(target_user)
+            now = timezone.now()
+            reset_request.status = MFAResetRequest.Status.RESOLVED
+            reset_request.reviewed_by = request.user
+            reset_request.reviewed_at = now
+            reset_request.resolved_at = now
+            if needs_admin_verification:
+                reset_request.verification_method = verification_method
+                reset_request.verification_outcome = verification_outcome
+            reset_request.save(
+                update_fields=[
+                    'status',
+                    'reviewed_by',
+                    'reviewed_at',
+                    'resolved_at',
+                    'verification_method',
+                    'verification_outcome',
+                ]
+            )
+
+            record_audit(
+                user=request.user,
+                action='auth.mfa.reset.completed',
+                target_type='MFAResetRequest',
+                target_id=reset_request.pk,
+                metadata={
+                    'verification_method': verification_method,
+                    'verification_outcome': verification_outcome,
+                    'target_user_role': target_user.role,
+                },
+                request_ip=_get_ip(request),
+            )
+
+        return Response(
+            {'detail': 'MFA reset completed.'},
             status=status.HTTP_200_OK,
         )
 
