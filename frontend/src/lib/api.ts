@@ -22,6 +22,8 @@ import type {
   LoginResult,
   Match,
   MfaResult,
+  MfaResetResolvePayload,
+  MfaResetRequestResult,
   MfaSetupResult,
   Paginated,
   ProfileDocuments,
@@ -283,6 +285,23 @@ export const api = {
     await apiFetch('/api/auth/password-reset/request', {
       method: 'POST',
       body: { email },
+    });
+  },
+
+  async requestMfaReset(email: string, password: string): Promise<MfaResetRequestResult> {
+    return apiFetch<MfaResetRequestResult>('/api/auth/mfa-reset/request', {
+      method: 'POST',
+      body: { email, password },
+    });
+  },
+
+  async resolveMfaReset(
+    requestId: number,
+    payload: MfaResetResolvePayload,
+  ): Promise<{ detail: string }> {
+    return apiFetch<{ detail: string }>(`/api/staff/mfa-reset/requests/${requestId}/resolve/`, {
+      method: 'POST',
+      body: payload,
     });
   },
 

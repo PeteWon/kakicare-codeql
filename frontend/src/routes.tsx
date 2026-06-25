@@ -24,6 +24,7 @@ import { Register } from './pages/public/Register';
 import { VerifyEmail } from './pages/public/VerifyEmail';
 import { ForgotPassword } from './pages/public/ForgotPassword';
 import { ResetPassword } from './pages/public/ResetPassword';
+import { MfaResetRequest } from './pages/public/MfaResetRequest';
 import { AcceptInvite } from './pages/public/AcceptInvite';
 import { NotFound } from './pages/public/NotFound';
 
@@ -43,6 +44,7 @@ import { StaffMatches } from './pages/staff/StaffMatches';
 import { ProposeMatch } from './pages/staff/ProposeMatch';
 import { Sessions } from './pages/staff/Sessions';
 import { AuditLog } from './pages/staff/AuditLog';
+import { MfaResetRequests } from './pages/staff/MfaResetRequests';
 
 export const router = createBrowserRouter([
   {
@@ -53,6 +55,7 @@ export const router = createBrowserRouter([
       { path: '/register', element: <Register /> },
       { path: '/verify-email', element: <VerifyEmail /> },
       { path: '/forgot-password', element: <ForgotPassword /> },
+      { path: '/mfa-reset', element: <MfaResetRequest /> },
       { path: '/reset-password', element: <ResetPassword /> },
       { path: '/accept-invite', element: <AcceptInvite /> },
       { path: '/dashboard', element: <SmartRedirect /> },
@@ -97,6 +100,7 @@ export const router = createBrowserRouter([
           { path: 'matches', element: <StaffMatches /> },
           { path: 'matches/new', element: <ProposeMatch /> },
           { path: 'sessions', element: <Sessions /> },
+          { path: 'mfa-resets', element: <MfaResetRequests /> },
           { path: 'audit-log', element: <AuditLog /> },
         ],
       },

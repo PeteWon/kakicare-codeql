@@ -500,6 +500,13 @@ export function Login() {
             </Link>
           </div>
 
+          <p className="text-center text-sm text-primary-500">
+            Lost your authenticator?{' '}
+            <Link to="/mfa-reset" className="font-medium text-primary-700 hover:text-primary-900">
+              Request an MFA reset
+            </Link>
+          </p>
+
           <Button type="submit" fullWidth disabled={submitting}>
             {submitting ? 'Signing in…' : 'Sign in'}
           </Button>
