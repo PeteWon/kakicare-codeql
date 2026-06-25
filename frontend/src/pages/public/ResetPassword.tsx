@@ -19,10 +19,12 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { Button, Card, TextField } from '@/components';
 import { api, ApiError } from '@/lib/api';
 import { matches, minLength, required, validate } from '@/lib/validation';
+import { usePageTitle } from '@/lib/usePageTitle';
 
 type PageState = 'form' | 'success' | 'invalid_token';
 
 export function ResetPassword() {
+  usePageTitle('Set new password');
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token') ?? '';
 

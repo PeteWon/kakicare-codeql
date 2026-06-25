@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, ApiError } from '@/lib/api';
+import { usePageTitle } from '@/lib/usePageTitle';
 import type { StaffSession } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
@@ -161,6 +162,7 @@ interface DashboardData {
 }
 
 export function StaffDashboard() {
+  usePageTitle('Dashboard');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<DashboardData | null>(null);

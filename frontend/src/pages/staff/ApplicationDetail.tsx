@@ -20,6 +20,7 @@ import type { FormEvent } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError } from '@/lib/api';
+import { usePageTitle } from '@/lib/usePageTitle';
 import type { ApplicationStatus, DocumentInfo, StaffApplicationDetail } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
@@ -384,6 +385,7 @@ function AvailabilityGrid({ availability }: { availability: Record<string, strin
 // ---------------------------------------------------------------------------
 
 export function ApplicationDetail() {
+  usePageTitle('Application');
   const { id } = useParams<{ id: string }>();
   const numericId = Number(id);
   const navigate = useNavigate();

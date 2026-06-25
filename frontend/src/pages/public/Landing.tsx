@@ -1,7 +1,9 @@
 import { Link } from 'react-router-dom';
 import { Button } from '@/components';
+import { usePageTitle } from '@/lib/usePageTitle';
 
 export function Landing() {
+  usePageTitle('Connecting Hearts, Supporting Seniors');
   return (
     <div className="space-y-14 py-8">
       {/* ---- Hero ---- */}

@@ -26,6 +26,7 @@
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '@/lib/api';
+import { usePageTitle } from '@/lib/usePageTitle';
 import type {
   FollowUpOutcome,
   Paginated,
@@ -199,6 +200,7 @@ function CheckinCodeModal({
 // ---------------------------------------------------------------------------
 
 export function Sessions() {
+  usePageTitle('Sessions');
   const [searchParams, setSearchParams] = useSearchParams();
   const statusFilter = (searchParams.get('status') ??
     'pending_confirmation') as SessionStatus | '';

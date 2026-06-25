@@ -8,6 +8,7 @@ import type { ChangeEvent, FormEvent } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError } from '@/lib/api';
+import { usePageTitle } from '@/lib/usePageTitle';
 import type { ConsentStatus, SeniorWritePayload } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
@@ -166,6 +167,7 @@ export function SeniorForm() {
   // id is present only on the edit route (/staff/seniors/:id/edit).
   const { id } = useParams<{ id?: string }>();
   const isEdit = Boolean(id);
+  usePageTitle(isEdit ? 'Edit senior' : 'New senior');
   const numericId = Number(id);
   const navigate = useNavigate();
 

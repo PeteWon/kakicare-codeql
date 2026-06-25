@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, ApiError } from '@/lib/api';
+import { usePageTitle } from '@/lib/usePageTitle';
 import { Button, Card, CardTitle } from '@/components';
 import type { VolunteerMatch } from '@/lib/types';
 
@@ -251,6 +252,7 @@ function ActiveMatchCard({ match }: { match: VolunteerMatch }) {
 // ---------------------------------------------------------------------------
 
 export function Matches() {
+  usePageTitle('My matches');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [matches, setMatches] = useState<VolunteerMatch[]>([]);
