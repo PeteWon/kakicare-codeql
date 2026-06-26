@@ -4,6 +4,27 @@
 # Multi-stage so the final image carries only nginx + the built static files,
 # never node_modules or the toolchain.
 
+# ---- Stage 0: compile headers-more-nginx-module --------------------------------
+# Compiled with --with-compat so the .so is ABI-stable against the exact binary
+# shipped in the final stage (both stages share the same nginx:1.31-alpine base).
+FROM nginx:1.31-alpine AS module-builder
+
+ARG HEADERS_MORE_VERSION=0.37
+
+RUN apk add --no-cache build-base openssl-dev pcre2-dev zlib-dev wget ca-certificates \
+    && NGINX_VER=$(nginx -v 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+') \
+    && wget -q "https://nginx.org/download/nginx-${NGINX_VER}.tar.gz" \
+    && tar -xzf "nginx-${NGINX_VER}.tar.gz" \
+    && wget -q "https://github.com/openresty/headers-more-nginx-module/archive/refs/tags/v${HEADERS_MORE_VERSION}.tar.gz" \
+         -O headers-more.tar.gz \
+    && tar -xzf headers-more.tar.gz \
+    && cd "nginx-${NGINX_VER}" \
+    && ./configure \
+         --with-compat \
+         "--add-dynamic-module=../headers-more-nginx-module-${HEADERS_MORE_VERSION}" \
+    && make modules \
+    && cp objs/ngx_http_headers_more_filter_module.so /
+
 # ---- Stage 1: build the SPA --------------------------------------------------
 FROM node:26-alpine AS frontend-build
 
@@ -22,6 +43,12 @@ RUN npm run build
 
 # ---- Stage 2: nginx image ----------------------------------------------------
 FROM nginx:1.31-alpine
+
+# headers-more module — used to suppress the Server response header (issue #55).
+COPY --from=module-builder /ngx_http_headers_more_filter_module.so /usr/lib/nginx/modules/
+
+# Replace default nginx.conf with one that loads the dynamic module at startup.
+COPY nginx/nginx-main.conf /etc/nginx/nginx.conf
 
 # Remove the default site config; replace with ours.
 RUN rm -f /etc/nginx/conf.d/default.conf
