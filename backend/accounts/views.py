@@ -113,6 +113,22 @@ class PasswordResetRateThrottle(SimpleRateThrottle):
         return self.cache_format % {'scope': self.scope, 'ident': self.get_ident(request)}
 
 
+class RegistrationRateThrottle(SimpleRateThrottle):
+    """SR-AUTH-04: 5 registration attempts per hour, keyed by source IP.
+
+    Each attempt triggers an outbound verification email — without a throttle
+    an attacker can abuse the SMTP relay and exhaust server resources.
+    """
+
+    scope = 'register'
+
+    def parse_rate(self, rate):
+        return (5, 3600)
+
+    def get_cache_key(self, request, view):
+        return self.cache_format % {'scope': self.scope, 'ident': self.get_ident(request)}
+
+
 # ---------------------------------------------------------------------------
 # MFA helpers
 # ---------------------------------------------------------------------------
@@ -607,6 +623,7 @@ class RegisterView(APIView):
     """POST /api/auth/register"""
 
     permission_classes = [AllowAny]
+    throttle_classes = [RegistrationRateThrottle]
 
     def post(self, request):
         serializer = RegisterSerializer(data=request.data)
