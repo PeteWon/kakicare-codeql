@@ -14,7 +14,7 @@ from django.core.mail import send_mail
 from django.db import transaction
 from django.middleware.csrf import get_token
 from django.utils import timezone
-from django_otp.plugins.otp_totp.models import TOTPDevice
+from .models import EncryptedTOTPDevice
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -231,7 +231,7 @@ class LoginView(APIView):
             return Response({'status': 'invalid'}, status=status.HTTP_200_OK)
 
         # Determine MFA requirement based on role and enrolment state.
-        has_confirmed_totp = TOTPDevice.objects.devices_for_user(
+        has_confirmed_totp = EncryptedTOTPDevice.objects.devices_for_user(
             user, confirmed=True
         ).exists()
 
@@ -333,19 +333,19 @@ class MFASetupView(APIView):
         # codes). Confirmed devices are NOT removed here — they remain valid
         # until a new device is confirmed, so the user never loses MFA access
         # mid-setup if they restart the flow.
-        TOTPDevice.objects.filter(user=user, confirmed=False).delete()
+        EncryptedTOTPDevice.objects.filter(user=user, confirmed=False).delete()
         # Backup codes belong to the user, not a specific device. Wiping them on
         # every setup call would strand a user who already has a confirmed device
         # and valid codes if they bail mid-flow. Only clear when no confirmed
         # device exists — i.e. any existing codes are leftovers from an abandoned
         # initial setup, never delivered to the user.
-        has_confirmed_device = TOTPDevice.objects.devices_for_user(
+        has_confirmed_device = EncryptedTOTPDevice.objects.devices_for_user(
             user, confirmed=True
         ).exists()
         if not has_confirmed_device:
             user.mfa_backup_codes.all().delete()
 
-        device = TOTPDevice.objects.create(
+        device = EncryptedTOTPDevice.objects.create(
             user=user,
             name=f'totp-{user.pk}',
             confirmed=False,
@@ -400,13 +400,13 @@ class MFAVerifyView(APIView):
         # Post-login enrolment: prefer unconfirmed device (being confirmed now).
         if is_mid_login:
             device = (
-                TOTPDevice.objects.devices_for_user(user, confirmed=True).first()
-                or TOTPDevice.objects.filter(user=user, confirmed=False).first()
+                EncryptedTOTPDevice.objects.devices_for_user(user, confirmed=True).first()
+                or EncryptedTOTPDevice.objects.filter(user=user, confirmed=False).first()
             )
         else:
             device = (
-                TOTPDevice.objects.filter(user=user, confirmed=False).first()
-                or TOTPDevice.objects.devices_for_user(user, confirmed=True).first()
+                EncryptedTOTPDevice.objects.filter(user=user, confirmed=False).first()
+                or EncryptedTOTPDevice.objects.devices_for_user(user, confirmed=True).first()
             )
 
         if device is None and not backup_code:

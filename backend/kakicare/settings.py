@@ -270,6 +270,11 @@ EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD', default='')
 # Issuer name shown in authenticator apps (e.g. "KakiCare:user@example.com").
 OTP_TOTP_ISSUER = 'KakiCare'
 
+# SR-DATA: TOTP device secrets are encrypted at rest with Fernet (§10.1.2,
+# threat #27). REQUIRED — generate a key with:
+#   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+TOTP_ENCRYPTION_KEY = env('TOTP_ENCRYPTION_KEY')
+
 
 # --- Frontend ----------------------------------------------------------------
 # Used when constructing links in outgoing emails (e.g. email verification).
