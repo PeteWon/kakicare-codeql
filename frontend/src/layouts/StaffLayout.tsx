@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { to: '/staff/matches', label: 'Matches' },
   { to: '/staff/sessions', label: 'Sessions' },
   { to: '/staff/audit-log', label: 'Audit log' },
+  { to: '/staff/account', label: 'Account' },
 ];
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>

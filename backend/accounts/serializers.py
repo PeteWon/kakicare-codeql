@@ -117,3 +117,10 @@ class AcceptInviteSerializer(serializers.Serializer):
 
     token = serializers.CharField(min_length=1)
     new_password = serializers.CharField(write_only=True, min_length=12)
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    """Input for POST /api/auth/change-password."""
+
+    current_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True, min_length=12)

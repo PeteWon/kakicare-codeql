@@ -32,6 +32,7 @@ from .models import (
 )
 from .serializers import (
     AcceptInviteSerializer,
+    ChangePasswordSerializer,
     LoginSerializer,
     MFAVerifySerializer,
     PasswordResetConfirmSerializer,
@@ -840,3 +841,94 @@ class VerifyEmailView(APIView):
             {'detail': 'Email verified successfully.'},
             status=status.HTTP_200_OK,
         )
+
+
+# ---------------------------------------------------------------------------
+# Account settings
+# ---------------------------------------------------------------------------
+
+class ChangePasswordView(APIView):
+    """POST /api/auth/change-password
+
+    Authenticated users change their own password by supplying their current
+    password and a new one. Changing the password invalidates all other active
+    sessions via Django's built-in session auth hash mechanism.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = ChangePasswordSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        current_password = serializer.validated_data['current_password']
+        new_password = serializer.validated_data['new_password']
+
+        if not request.user.check_password(current_password):
+            return Response(
+                {'current_password': ['Incorrect password.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if current_password == new_password:
+            return Response(
+                {'new_password': ['New password must differ from your current password.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            validate_password(new_password, user=request.user)
+        except DjangoValidationError as exc:
+            return Response(
+                {'new_password': list(exc.messages)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        request.user.set_password(new_password)
+        request.user.save(update_fields=['password'])
+        record_audit(user=request.user, action='auth.password.changed', request_ip=_get_ip(request))
+
+        # Re-authenticate so the current session remains valid after the
+        # password change (other sessions are invalidated automatically).
+        auth.update_session_auth_hash(request, request.user)
+
+        return Response({'detail': 'Password changed successfully.'}, status=status.HTTP_200_OK)
+
+
+class MFAStatusView(APIView):
+    """GET /api/auth/mfa/status
+
+    Returns whether the authenticated user has a confirmed TOTP device enrolled.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        enrolled = EncryptedTOTPDevice.objects.filter(
+            user=request.user, confirmed=True
+        ).exists()
+        return Response({'enrolled': enrolled})
+
+
+class MFADisableView(APIView):
+    """POST /api/auth/mfa/disable
+
+    Allows volunteers to disable MFA by removing their confirmed TOTP device
+    and backup codes. Staff MFA is mandatory and cannot be disabled here.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if request.user.role == User.Role.STAFF:
+            return Response(
+                {'detail': 'MFA cannot be disabled for staff accounts.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        EncryptedTOTPDevice.objects.filter(user=request.user).delete()
+        request.user.mfa_backup_codes.all().delete()
+        record_audit(user=request.user, action='auth.mfa.disabled', request_ip=_get_ip(request))
+
+        return Response({'detail': 'MFA disabled successfully.'}, status=status.HTTP_200_OK)
