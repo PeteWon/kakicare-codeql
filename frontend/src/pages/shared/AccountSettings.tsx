@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
+import QRCode from 'react-qr-code';
 import { api, ApiError } from '@/lib/api';
 import { Button, Card, CardTitle, TextField } from '@/components';
 import { matches, minLength, required, validate } from '@/lib/validation';
 import { usePageTitle } from '@/lib/usePageTitle';
-import type { UserRole } from '@/lib/types';
+import type { MfaSetupResult, UserRole } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
 // Change-password section
@@ -127,7 +128,16 @@ function MfaSection({ role }: { role: UserRole }) {
   const [loading, setLoading] = useState(true);
   const [disabling, setDisabling] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // Enable flow
+  const [setupStep, setSetupStep] = useState<'idle' | 'setup'>('idle');
+  const [setupData, setSetupData] = useState<MfaSetupResult | null>(null);
+  const [setupLoading, setSetupLoading] = useState(false);
+  const [setupCode, setSetupCode] = useState('');
+  const [setupCodeError, setSetupCodeError] = useState<string | null>(null);
+  const [backupsAcknowledged, setBackupsAcknowledged] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
   useEffect(() => {
     api.getMfaStatus()
@@ -138,12 +148,12 @@ function MfaSection({ role }: { role: UserRole }) {
 
   async function handleDisable() {
     setError(null);
-    setSuccess(false);
+    setSuccessMsg(null);
     setDisabling(true);
     try {
       await api.disableMfa();
       setEnrolled(false);
-      setSuccess(true);
+      setSuccessMsg('MFA has been disabled.');
     } catch (err) {
       if (err instanceof ApiError) {
         setError(err.message);
@@ -155,21 +165,71 @@ function MfaSection({ role }: { role: UserRole }) {
     }
   }
 
+  async function handleStartSetup() {
+    setError(null);
+    setSuccessMsg(null);
+    setSetupLoading(true);
+    setSetupStep('setup');
+    try {
+      const data = await api.setupMfa();
+      setSetupData(data);
+    } catch {
+      setError('Could not start MFA setup. Please try again.');
+      setSetupStep('idle');
+    } finally {
+      setSetupLoading(false);
+    }
+  }
+
+  function handleCancelSetup() {
+    setSetupStep('idle');
+    setSetupData(null);
+    setSetupCode('');
+    setSetupCodeError(null);
+    setBackupsAcknowledged(false);
+  }
+
+  async function handleConfirmSetup(e: FormEvent) {
+    e.preventDefault();
+    const trimmed = setupCode.trim();
+    if (trimmed.length < 6 || trimmed.length > 8) {
+      setSetupCodeError('Enter the 6-digit code from your authenticator app.');
+      return;
+    }
+    setConfirming(true);
+    setSetupCodeError(null);
+    try {
+      const result = await api.verifyMfa({ code: trimmed });
+      if (result.status === 'enrolled') {
+        setEnrolled(true);
+        setSetupStep('idle');
+        setSetupData(null);
+        setSetupCode('');
+        setBackupsAcknowledged(false);
+        setSuccessMsg('MFA has been enabled.');
+      } else {
+        setSetupCodeError('Invalid code. Please try again.');
+      }
+    } catch {
+      setSetupCodeError('Something went wrong. Please try again.');
+    } finally {
+      setConfirming(false);
+    }
+  }
+
   return (
     <section aria-labelledby="mfa-heading">
       <CardTitle id="mfa-heading" className="mb-3">
         Two-factor authentication (MFA)
       </CardTitle>
       <Card className="space-y-3">
-        {loading && (
-          <p className="text-sm text-primary-500">Loading…</p>
-        )}
+        {loading && <p className="text-sm text-primary-500">Loading…</p>}
 
         {!loading && error && (
           <p role="alert" className="text-sm text-red-600">{error}</p>
         )}
 
-        {!loading && enrolled !== null && (
+        {!loading && enrolled !== null && setupStep === 'idle' && (
           <>
             <p className="text-sm text-primary-700">
               Status:{' '}
@@ -178,9 +238,9 @@ function MfaSection({ role }: { role: UserRole }) {
               </span>
             </p>
 
-            {success && (
+            {successMsg && (
               <p role="status" className="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800">
-                MFA has been disabled.
+                {successMsg}
               </p>
             )}
 
@@ -193,11 +253,100 @@ function MfaSection({ role }: { role: UserRole }) {
                 {disabling ? 'Disabling…' : 'Disable MFA'}
               </Button>
             ) : (
-              <p className="text-sm text-primary-500">
-                You can enable MFA from the login flow after your next sign-in.
-              </p>
+              <Button onClick={() => void handleStartSetup()}>
+                Enable MFA
+              </Button>
             )}
           </>
+        )}
+
+        {!loading && setupStep === 'setup' && (
+          <div className="space-y-5">
+            {setupLoading || !setupData ? (
+              <div className="flex items-center justify-center py-6">
+                <span
+                  role="status"
+                  aria-label="Loading setup…"
+                  className="h-8 w-8 animate-spin rounded-full border-4 border-primary-100 border-t-primary-500"
+                />
+              </div>
+            ) : (
+              <>
+                <div>
+                  <p className="text-sm font-medium text-primary-800">Scan with your authenticator app</p>
+                  <div className="mt-2 flex justify-center rounded-xl bg-white p-4 shadow-sm ring-1 ring-cream-200">
+                    <QRCode value={setupData.config_url} size={180} />
+                  </div>
+                </div>
+
+                <div>
+                  <p className="text-sm font-medium text-primary-800">
+                    Can't scan?{' '}
+                    <span className="font-normal text-primary-500">
+                      Enter this key manually in your authenticator app.
+                    </span>
+                  </p>
+                  <p className="mt-1 break-all rounded-xl bg-cream-100 px-3 py-2 font-mono text-sm text-primary-900 select-all">
+                    {setupData.secret_key}
+                  </p>
+                  <p className="mt-1 text-xs text-primary-500">Issuer: KakiCare</p>
+                </div>
+
+                <div>
+                  <p className="text-sm font-medium text-primary-800">
+                    Backup codes{' '}
+                    <span className="font-normal text-red-600">(save these now — shown once only)</span>
+                  </p>
+                  <ul className="mt-2 grid grid-cols-2 gap-1">
+                    {setupData.backup_codes.map((c) => (
+                      <li
+                        key={c}
+                        className="rounded-lg bg-cream-100 px-2 py-1 font-mono text-sm text-primary-900"
+                      >
+                        {c}
+                      </li>
+                    ))}
+                  </ul>
+                  <label className="mt-3 flex items-center gap-2 text-sm text-primary-700">
+                    <input
+                      type="checkbox"
+                      checked={backupsAcknowledged}
+                      onChange={(e) => setBackupsAcknowledged(e.target.checked)}
+                      className="rounded border-cream-300"
+                    />
+                    I've saved my backup codes
+                  </label>
+                </div>
+
+                <form className="space-y-4" onSubmit={handleConfirmSetup} noValidate>
+                  <TextField
+                    label="Authentication code"
+                    name="setupCode"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    autoFocus
+                    maxLength={8}
+                    placeholder="123456"
+                    value={setupCode}
+                    error={setupCodeError}
+                    hint="Enter the 6-digit code from your authenticator app."
+                    onChange={(e) => {
+                      setSetupCode(e.target.value.replace(/\D/g, '').slice(0, 8));
+                      setSetupCodeError(null);
+                    }}
+                  />
+                  <div className="flex gap-3">
+                    <Button type="submit" disabled={confirming || !backupsAcknowledged}>
+                      {confirming ? 'Verifying…' : 'Verify and enable'}
+                    </Button>
+                    <Button type="button" variant="secondary" disabled={confirming} onClick={handleCancelSetup}>
+                      Cancel
+                    </Button>
+                  </div>
+                </form>
+              </>
+            )}
+          </div>
         )}
       </Card>
     </section>
