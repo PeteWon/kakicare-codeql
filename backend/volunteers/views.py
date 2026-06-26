@@ -16,6 +16,7 @@ SECURITY (SR-AUTHZ-01): every view explicitly declares a permission class.
 The frontend role-gating is a UX convenience and is NOT a security boundary.
 """
 
+import hashlib
 import logging
 import os
 import re
@@ -57,6 +58,16 @@ _MAGIC_SIGNATURES: dict[bytes, str] = {
 }
 
 _MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB — enforced server-side (SR-INPUT-01)
+
+
+def _compute_sha256(file_obj) -> str:
+    """Return the SHA-256 hex digest of file_obj, leaving position at 0."""
+    file_obj.seek(0)
+    digest = hashlib.sha256()
+    for chunk in iter(lambda: file_obj.read(65536), b''):
+        digest.update(chunk)
+    file_obj.seek(0)
+    return digest.hexdigest()
 
 
 def _detect_mime_type(file_obj) -> str | None:
@@ -198,6 +209,10 @@ class DocumentUploadView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # SR-DATA-06: compute checksum before writing to disk so the digest
+        # covers exactly the bytes the client supplied (seek is reset after).
+        checksum = _compute_sha256(uploaded_file)
+
         profile, _ = VolunteerProfile.objects.get_or_create(user=request.user)
 
         # Build a non-guessable stored filename (SR-DATA-03).
@@ -208,6 +223,7 @@ class DocumentUploadView(APIView):
             document_type=document_type,
             original_filename=uploaded_file.name[:255],
             content_type=detected_mime,   # server-detected, not client-supplied
+            checksum_sha256=checksum,
         )
         # Save file as <uuid> inside the upload_to directory.
         doc.file.save(stored_name, uploaded_file, save=False)
@@ -265,6 +281,27 @@ class DocumentDownloadView(APIView):
         file_path = doc.file.path
         if not os.path.exists(file_path):
             raise Http404
+
+        # SR-DATA-06: verify the stored checksum before serving.
+        if doc.checksum_sha256:
+            digest = hashlib.sha256()
+            with open(file_path, 'rb') as f:
+                for chunk in iter(lambda: f.read(65536), b''):
+                    digest.update(chunk)
+            if digest.hexdigest() != doc.checksum_sha256:
+                logger.error(
+                    'SR-DATA-06 integrity failure: document pk=%s profile=%s '
+                    'expected=%s actual=%s — file may be tampered',
+                    doc.pk, doc.profile_id,
+                    doc.checksum_sha256, digest.hexdigest(),
+                )
+                if not doc.checksum_mismatch:
+                    doc.checksum_mismatch = True
+                    doc.save(update_fields=['checksum_mismatch'])
+                return Response(
+                    {'detail': 'File integrity check failed. This document cannot be served.'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
 
         # Sanitise the original filename for the Content-Disposition header to
         # prevent header injection.

@@ -5,8 +5,10 @@ Covers Report II §3.6 (C5/C8 secure coding) and §3.5 (access control):
   - server-side 5 MB size limit (SR-INPUT-01)
   - documents served only to owner or staff; 404 (not 403) otherwise (SR-AUTHZ-02)
   - internal_review_note is staff-only and never returned to the volunteer
+  - SHA-256 checksum stored on upload and verified on download (SR-DATA-06)
 """
 
+import hashlib
 import shutil
 import tempfile
 
@@ -73,6 +75,14 @@ class DocumentUploadTests(KakiCareAPITestCase):
         # SR-DATA-03: stored under a non-guessable name, not the original.
         self.assertNotIn('my-secret-name', doc.file.name)
 
+    def test_checksum_stored_on_upload(self):
+        # SR-DATA-06: SHA-256 of the uploaded bytes is saved to the record.
+        self._upload('id.png', PNG_BYTES, 'image/png')
+        doc = VolunteerDocument.objects.get(profile__user=self.volunteer)
+        expected = hashlib.sha256(PNG_BYTES).hexdigest()
+        self.assertEqual(doc.checksum_sha256, expected)
+        self.assertFalse(doc.checksum_mismatch)
+
 
 @override_settings(MEDIA_ROOT=_TMP_MEDIA)
 class DocumentDownloadAccessTests(KakiCareAPITestCase):
@@ -121,6 +131,30 @@ class DocumentDownloadAccessTests(KakiCareAPITestCase):
         # app-wide). This leaks nothing: every pk returns 401, so existence stays
         # hidden — the 404-not-403 guarantee covers authenticated non-owners above.
         self.assertEqual(self.client.get(self.url).status_code, 401)
+
+    def test_tampered_file_is_not_served(self):
+        # SR-DATA-06: overwrite the stored bytes with different content and
+        # confirm the download is blocked with HTTP 500.
+        with open(self.doc.file.path, 'wb') as f:
+            f.write(b'\x89PNG\r\n\x1a\n' + b'\xff' * 128)  # valid magic, different body
+        self.client.force_authenticate(user=self.owner)
+        resp = self.client.get(self.url)
+        self.assertEqual(resp.status_code, 500)
+
+    def test_tampered_file_sets_mismatch_flag(self):
+        # SR-DATA-06: checksum_mismatch must be True after a failed integrity check
+        # so staff can see the flag in the application detail view.
+        with open(self.doc.file.path, 'wb') as f:
+            f.write(b'\x89PNG\r\n\x1a\n' + b'\xff' * 128)
+        self.client.force_authenticate(user=self.owner)
+        self.client.get(self.url)
+        self.doc.refresh_from_db()
+        self.assertTrue(self.doc.checksum_mismatch)
+
+    def test_intact_file_is_served(self):
+        # SR-DATA-06: a file whose bytes match the stored checksum is served normally.
+        self.client.force_authenticate(user=self.owner)
+        self.assertEqual(self.client.get(self.url).status_code, 200)
 
 
 class VettingTests(KakiCareAPITestCase):
