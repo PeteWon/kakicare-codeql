@@ -854,6 +854,12 @@ class ChangePasswordView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        if current_password == new_password:
+            return Response(
+                {'new_password': ['New password must differ from your current password.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         try:
             validate_password(new_password, user=request.user)
         except DjangoValidationError as exc:

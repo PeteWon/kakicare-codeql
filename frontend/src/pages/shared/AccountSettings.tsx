@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { Button, Card, CardTitle, TextField } from '@/components';
-import { minLength, required, validate } from '@/lib/validation';
+import { matches, minLength, required, validate } from '@/lib/validation';
 import { usePageTitle } from '@/lib/usePageTitle';
 import type { UserRole } from '@/lib/types';
 
@@ -13,8 +13,10 @@ import type { UserRole } from '@/lib/types';
 function ChangePasswordSection() {
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
+  const [confirm, setConfirm] = useState('');
   const [currentError, setCurrentError] = useState<string | null>(null);
   const [nextError, setNextError] = useState<string | null>(null);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
 
@@ -26,16 +28,22 @@ function ChangePasswordSection() {
     const nextErr = validate(next, [
       required('New password'),
       minLength(12, 'New password'),
+    ]) ?? (next === current ? 'New password must differ from your current password.' : null);
+    const confirmErr = validate(confirm, [
+      required('Confirm password'),
+      matches(next, 'Passwords'),
     ]);
     setCurrentError(currentErr);
     setNextError(nextErr);
-    if (currentErr || nextErr) return;
+    setConfirmError(confirmErr);
+    if (currentErr || nextErr || confirmErr) return;
 
     setSubmitting(true);
     try {
       await api.changePassword(current, next);
       setCurrent('');
       setNext('');
+      setConfirm('');
       setSuccess(true);
     } catch (err) {
       if (err instanceof ApiError && err.status === 400 && err.body) {
@@ -85,6 +93,19 @@ function ChangePasswordSection() {
             onChange={(e) => {
               setNext(e.target.value);
               setNextError(null);
+              setSuccess(false);
+            }}
+          />
+          <TextField
+            label="Confirm new password"
+            type="password"
+            name="confirm-password"
+            autoComplete="new-password"
+            value={confirm}
+            error={confirmError}
+            onChange={(e) => {
+              setConfirm(e.target.value);
+              setConfirmError(null);
               setSuccess(false);
             }}
           />
