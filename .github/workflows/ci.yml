@@ -75,6 +75,7 @@ jobs:
         working-directory: backend
     env:
       SECRET_KEY: ci-only-secret-key-do-not-reuse
+      TOTP_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
       DEBUG: 'True'
       ALLOWED_HOSTS: 'localhost,127.0.0.1'
       POSTGRES_DB: kakicare
