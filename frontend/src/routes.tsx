@@ -18,6 +18,7 @@ import { PublicLayout } from './layouts/PublicLayout';
 import { VolunteerLayout } from './layouts/VolunteerLayout';
 import { StaffLayout } from './layouts/StaffLayout';
 
+import { Contact } from './pages/public/Contact';
 import { Landing } from './pages/public/Landing';
 import { Login } from './pages/public/Login';
 import { Register } from './pages/public/Register';
@@ -49,6 +50,7 @@ export const router = createBrowserRouter([
     element: <PublicLayout />,
     children: [
       { path: '/', element: <Landing /> },
+      { path: '/contact', element: <Contact /> },
       { path: '/login', element: <Login /> },
       { path: '/register', element: <Register /> },
       { path: '/verify-email', element: <VerifyEmail /> },

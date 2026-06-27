@@ -169,6 +169,8 @@ REST_FRAMEWORK = {
         'senior_list': '30/min',
         # AC-04: 5 check-in code verifications per 15 minutes per source IP.
         'checkin_verify': '5/15min',
+        # 5 contact-form submissions per hour per source IP (abuse/spam prevention).
+        'contact': '5/hour',
     },
 }
 

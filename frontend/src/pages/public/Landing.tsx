@@ -41,8 +41,14 @@ export function Landing() {
         </p>
         <p className="rounded-2xl border border-cream-300 bg-cream-50 px-4 py-3 text-sm text-primary-600">
           Seniors are enrolled by KakiCare staff — they do not self-register. If
-          you know a senior who could benefit from the programme, please contact
-          us directly.
+          you know a senior who could benefit from the programme, please{' '}
+          <Link
+            to="/contact"
+            className="font-medium text-primary-700 underline hover:text-primary-900"
+          >
+            contact us directly
+          </Link>
+          .
         </p>
       </section>
 

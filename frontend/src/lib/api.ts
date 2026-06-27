@@ -300,6 +300,15 @@ export const api = {
     });
   },
 
+  async submitContact(payload: {
+    name: string;
+    email: string;
+    phone: string;
+    message: string;
+  }): Promise<void> {
+    await apiFetch('/api/contact/', { method: 'POST', body: payload });
+  },
+
   // --- Volunteer profile completion -----------------------------------------
   // SECURITY: file-type/size checks in FileUpload are USABILITY ONLY — the
   // backend must independently validate content type, enforce size limits, and
