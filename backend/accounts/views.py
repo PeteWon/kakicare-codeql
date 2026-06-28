@@ -625,7 +625,7 @@ class PasswordResetConfirmView(APIView):
 
 def _clear_user_mfa(user: User) -> None:
     """Remove all TOTP devices and backup codes for a user."""
-    TOTPDevice.objects.filter(user=user).delete()
+    EncryptedTOTPDevice.objects.filter(user=user).delete()
     user.mfa_backup_codes.all().delete()
 
 
