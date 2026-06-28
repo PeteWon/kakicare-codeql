@@ -2,11 +2,14 @@ from django.urls import path
 
 from .views import (
     AcceptInviteView,
+    ChangePasswordView,
     LoginView,
     LogoutView,
     MeView,
+    MFADisableView,
     MFASetupView,
     MFAResetRequestView,
+    MFAStatusView,
     MFAVerifyView,
     PasswordResetConfirmView,
     PasswordResetRequestView,
@@ -21,9 +24,12 @@ urlpatterns = [
     path('login', LoginView.as_view(), name='auth-login'),
     path('logout', LogoutView.as_view(), name='auth-logout'),
     path('me', MeView.as_view(), name='auth-me'),
+    path('change-password', ChangePasswordView.as_view(), name='auth-change-password'),
     path('mfa/setup', MFASetupView.as_view(), name='auth-mfa-setup'),
     path('mfa/verify', MFAVerifyView.as_view(), name='auth-mfa-verify'),
     path('mfa-reset/request', MFAResetRequestView.as_view(), name='auth-mfa-reset-request'),
+    path('mfa/status', MFAStatusView.as_view(), name='auth-mfa-status'),
+    path('mfa/disable', MFADisableView.as_view(), name='auth-mfa-disable'),
     path('password-reset/request', PasswordResetRequestView.as_view(), name='auth-password-reset-request'),
     path('password-reset/confirm', PasswordResetConfirmView.as_view(), name='auth-password-reset-confirm'),
 ]

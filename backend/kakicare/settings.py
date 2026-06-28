@@ -163,6 +163,8 @@ REST_FRAMEWORK = {
         'mfa_verify': '10/15min',
         # 5 password-reset requests per hour per source IP.
         'password_reset': '5/hour',
+        # SR-AUTH-04: 5 registration attempts per hour per source IP.
+        'register': '5/hour',
         # 30 senior-list requests per minute per source IP (AC-02/AC-06).
         'senior_list': '30/min',
         # AC-04: 5 check-in code verifications per 15 minutes per source IP.
@@ -269,6 +271,11 @@ EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD', default='')
 # --- TOTP MFA ----------------------------------------------------------------
 # Issuer name shown in authenticator apps (e.g. "KakiCare:user@example.com").
 OTP_TOTP_ISSUER = 'KakiCare'
+
+# SR-DATA: TOTP device secrets are encrypted at rest with Fernet (§10.1.2,
+# threat #27). REQUIRED — generate a key with:
+#   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+TOTP_ENCRYPTION_KEY = env('TOTP_ENCRYPTION_KEY')
 
 
 # --- Frontend ----------------------------------------------------------------

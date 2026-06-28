@@ -14,7 +14,7 @@ from django.core.mail import send_mail
 from django.db import transaction
 from django.middleware.csrf import get_token
 from django.utils import timezone
-from django_otp.plugins.otp_totp.models import TOTPDevice
+from .models import EncryptedTOTPDevice
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -33,6 +33,7 @@ from .models import (
 )
 from .serializers import (
     AcceptInviteSerializer,
+    ChangePasswordSerializer,
     LoginSerializer,
     MFAResetRequestSerializer,
     MFAResetResolveSerializer,
@@ -108,6 +109,22 @@ class PasswordResetRateThrottle(SimpleRateThrottle):
     """SR-AUTH-04: 5 password-reset requests per hour, keyed by source IP."""
 
     scope = 'password_reset'
+
+    def parse_rate(self, rate):
+        return (5, 3600)
+
+    def get_cache_key(self, request, view):
+        return self.cache_format % {'scope': self.scope, 'ident': self.get_ident(request)}
+
+
+class RegistrationRateThrottle(SimpleRateThrottle):
+    """SR-AUTH-04: 5 registration attempts per hour, keyed by source IP.
+
+    Each attempt triggers an outbound verification email — without a throttle
+    an attacker can abuse the SMTP relay and exhaust server resources.
+    """
+
+    scope = 'register'
 
     def parse_rate(self, rate):
         return (5, 3600)
@@ -234,7 +251,7 @@ class LoginView(APIView):
             return Response({'status': 'invalid'}, status=status.HTTP_200_OK)
 
         # Determine MFA requirement based on role and enrolment state.
-        has_confirmed_totp = TOTPDevice.objects.devices_for_user(
+        has_confirmed_totp = EncryptedTOTPDevice.objects.devices_for_user(
             user, confirmed=True
         ).exists()
 
@@ -336,19 +353,19 @@ class MFASetupView(APIView):
         # codes). Confirmed devices are NOT removed here — they remain valid
         # until a new device is confirmed, so the user never loses MFA access
         # mid-setup if they restart the flow.
-        TOTPDevice.objects.filter(user=user, confirmed=False).delete()
+        EncryptedTOTPDevice.objects.filter(user=user, confirmed=False).delete()
         # Backup codes belong to the user, not a specific device. Wiping them on
         # every setup call would strand a user who already has a confirmed device
         # and valid codes if they bail mid-flow. Only clear when no confirmed
         # device exists — i.e. any existing codes are leftovers from an abandoned
         # initial setup, never delivered to the user.
-        has_confirmed_device = TOTPDevice.objects.devices_for_user(
+        has_confirmed_device = EncryptedTOTPDevice.objects.devices_for_user(
             user, confirmed=True
         ).exists()
         if not has_confirmed_device:
             user.mfa_backup_codes.all().delete()
 
-        device = TOTPDevice.objects.create(
+        device = EncryptedTOTPDevice.objects.create(
             user=user,
             name=f'totp-{user.pk}',
             confirmed=False,
@@ -403,13 +420,13 @@ class MFAVerifyView(APIView):
         # Post-login enrolment: prefer unconfirmed device (being confirmed now).
         if is_mid_login:
             device = (
-                TOTPDevice.objects.devices_for_user(user, confirmed=True).first()
-                or TOTPDevice.objects.filter(user=user, confirmed=False).first()
+                EncryptedTOTPDevice.objects.devices_for_user(user, confirmed=True).first()
+                or EncryptedTOTPDevice.objects.filter(user=user, confirmed=False).first()
             )
         else:
             device = (
-                TOTPDevice.objects.filter(user=user, confirmed=False).first()
-                or TOTPDevice.objects.devices_for_user(user, confirmed=True).first()
+                EncryptedTOTPDevice.objects.filter(user=user, confirmed=False).first()
+                or EncryptedTOTPDevice.objects.devices_for_user(user, confirmed=True).first()
             )
 
         if device is None and not backup_code:
@@ -770,6 +787,7 @@ class RegisterView(APIView):
     """POST /api/auth/register"""
 
     permission_classes = [AllowAny]
+    throttle_classes = [RegistrationRateThrottle]
 
     def post(self, request):
         serializer = RegisterSerializer(data=request.data)
@@ -986,3 +1004,94 @@ class VerifyEmailView(APIView):
             {'detail': 'Email verified successfully.'},
             status=status.HTTP_200_OK,
         )
+
+
+# ---------------------------------------------------------------------------
+# Account settings
+# ---------------------------------------------------------------------------
+
+class ChangePasswordView(APIView):
+    """POST /api/auth/change-password
+
+    Authenticated users change their own password by supplying their current
+    password and a new one. Changing the password invalidates all other active
+    sessions via Django's built-in session auth hash mechanism.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = ChangePasswordSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        current_password = serializer.validated_data['current_password']
+        new_password = serializer.validated_data['new_password']
+
+        if not request.user.check_password(current_password):
+            return Response(
+                {'current_password': ['Incorrect password.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if current_password == new_password:
+            return Response(
+                {'new_password': ['New password must differ from your current password.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            validate_password(new_password, user=request.user)
+        except DjangoValidationError as exc:
+            return Response(
+                {'new_password': list(exc.messages)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        request.user.set_password(new_password)
+        request.user.save(update_fields=['password'])
+        record_audit(user=request.user, action='auth.password.changed', request_ip=_get_ip(request))
+
+        # Re-authenticate so the current session remains valid after the
+        # password change (other sessions are invalidated automatically).
+        auth.update_session_auth_hash(request, request.user)
+
+        return Response({'detail': 'Password changed successfully.'}, status=status.HTTP_200_OK)
+
+
+class MFAStatusView(APIView):
+    """GET /api/auth/mfa/status
+
+    Returns whether the authenticated user has a confirmed TOTP device enrolled.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        enrolled = EncryptedTOTPDevice.objects.filter(
+            user=request.user, confirmed=True
+        ).exists()
+        return Response({'enrolled': enrolled})
+
+
+class MFADisableView(APIView):
+    """POST /api/auth/mfa/disable
+
+    Allows volunteers to disable MFA by removing their confirmed TOTP device
+    and backup codes. Staff MFA is mandatory and cannot be disabled here.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if request.user.role == User.Role.STAFF:
+            return Response(
+                {'detail': 'MFA cannot be disabled for staff accounts.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        EncryptedTOTPDevice.objects.filter(user=request.user).delete()
+        request.user.mfa_backup_codes.all().delete()
+        record_audit(user=request.user, action='auth.mfa.disabled', request_ip=_get_ip(request))
+
+        return Response({'detail': 'MFA disabled successfully.'}, status=status.HTTP_200_OK)

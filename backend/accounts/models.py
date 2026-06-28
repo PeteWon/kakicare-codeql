@@ -4,9 +4,17 @@ We implement authentication ourselves (no OAuth / third-party provider). Email
 is the unique login identifier; there is no username.
 """
 
+import re
+from binascii import unhexlify
+
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
 from django.utils import timezone
+from django_otp.plugins.otp_totp.models import TOTPDevice
+
+from .encryption import decrypt_totp_key, encrypt_totp_key
+
+_HEX_RE = re.compile(r'^[0-9a-fA-F]+$')
 
 
 class UserManager(BaseUserManager):
@@ -212,3 +220,28 @@ class MFABackupCode(models.Model):
 
     def __str__(self):
         return f'MFABackupCode(user={self.user_id}, used={self.used_at is not None})'
+
+
+class EncryptedTOTPDevice(TOTPDevice):
+    """Proxy of TOTPDevice that stores the TOTP secret encrypted at rest.
+
+    The key column is widened to varchar(500) via migration 0004 to fit the
+    Fernet ciphertext. On save, plaintext hex keys are encrypted before
+    writing. bin_key decrypts transparently so django-otp verify_token works
+    without any other changes.
+    """
+
+    class Meta:
+        proxy = True
+
+    @property
+    def bin_key(self):
+        raw = self.key
+        if raw and not _HEX_RE.match(raw):
+            raw = decrypt_totp_key(raw)
+        return unhexlify(raw)
+
+    def save(self, *args, **kwargs):
+        if self.key and _HEX_RE.match(self.key):
+            self.key = encrypt_totp_key(self.key)
+        super().save(*args, **kwargs)

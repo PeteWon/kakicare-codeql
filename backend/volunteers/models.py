@@ -99,6 +99,14 @@ class VolunteerDocument(models.Model):
     original_filename = models.CharField(max_length=255)
     content_type = models.CharField(max_length=100)
 
+    # SR-DATA-06: SHA-256 hex digest of the stored file bytes, computed at
+    # upload time and re-verified on every retrieval.
+    checksum_sha256 = models.CharField(max_length=64, blank=True)
+
+    # SR-DATA-06: set True the first time a download integrity check fails so
+    # staff can see the flag in the application detail view.
+    checksum_mismatch = models.BooleanField(default=False)
+
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

@@ -45,6 +45,7 @@ import { ProposeMatch } from './pages/staff/ProposeMatch';
 import { Sessions } from './pages/staff/Sessions';
 import { AuditLog } from './pages/staff/AuditLog';
 import { MfaResetRequests } from './pages/staff/MfaResetRequests';
+import { AccountSettings } from './pages/shared/AccountSettings';
 
 export const router = createBrowserRouter([
   {
@@ -77,6 +78,7 @@ export const router = createBrowserRouter([
           { path: 'sessions', element: <SessionHistory /> },
           { path: 'sessions/:id', element: <SessionDetail /> },
           { path: 'profile', element: <CompleteProfile /> },
+          { path: 'account', element: <AccountSettings /> },
         ],
       },
     ],
@@ -102,6 +104,7 @@ export const router = createBrowserRouter([
           { path: 'sessions', element: <Sessions /> },
           { path: 'mfa-resets', element: <MfaResetRequests /> },
           { path: 'audit-log', element: <AuditLog /> },
+          { path: 'account', element: <AccountSettings /> },
         ],
       },
     ],

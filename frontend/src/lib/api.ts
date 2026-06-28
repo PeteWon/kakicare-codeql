@@ -319,6 +319,21 @@ export const api = {
     });
   },
 
+  async changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    await apiFetch('/api/auth/change-password', {
+      method: 'POST',
+      body: { current_password: currentPassword, new_password: newPassword },
+    });
+  },
+
+  async getMfaStatus(): Promise<{ enrolled: boolean }> {
+    return apiFetch<{ enrolled: boolean }>('/api/auth/mfa/status');
+  },
+
+  async disableMfa(): Promise<void> {
+    await apiFetch('/api/auth/mfa/disable', { method: 'POST' });
+  },
+
   // --- Volunteer profile completion -----------------------------------------
   // SECURITY: file-type/size checks in FileUpload are USABILITY ONLY — the
   // backend must independently validate content type, enforce size limits, and

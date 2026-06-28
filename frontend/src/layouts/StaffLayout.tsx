@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { to: '/staff/sessions', label: 'Sessions' },
   { to: '/staff/mfa-resets', label: 'MFA resets' },
   { to: '/staff/audit-log', label: 'Audit log' },
+  { to: '/staff/account', label: 'Account' },
 ];
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
