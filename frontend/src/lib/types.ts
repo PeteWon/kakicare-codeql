@@ -149,8 +149,6 @@ export interface Session {
   durationMinutes: number;
   /** Volunteer's notes about how the senior is doing. */
   notes: string;
-  /** Optional flag the volunteer can raise for staff attention. */
-  concernRaised: boolean;
   createdAt: ISODateString;
 }
 
@@ -443,6 +441,21 @@ export interface ConfirmSessionResult extends StaffSession {
 
 /** Possible follow-up outcomes for a missed session. */
 export type FollowUpOutcome = 'senior_well' | 'rescheduled' | 'escalated';
+
+export type ConcernStatus = 'open' | 'resolved';
+
+export interface WelfareConcern {
+  id: string;
+  raised_by: { id: number; full_name: string };
+  session: { id: number } | null;
+  target_senior: { id: number; full_name: string };
+  description: string;
+  status: ConcernStatus;
+  resolved_by: { id: number; full_name: string } | null;
+  resolution_note: string;
+  created_at: string;
+  resolved_at: string | null;
+}
 
 /** Append-only audit record. Security-relevant actions are logged server-side. */
 export interface AuditLogEntry {
