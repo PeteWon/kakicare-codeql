@@ -42,6 +42,7 @@ import { SeniorForm } from './pages/staff/SeniorForm';
 import { StaffMatches } from './pages/staff/StaffMatches';
 import { ProposeMatch } from './pages/staff/ProposeMatch';
 import { Sessions } from './pages/staff/Sessions';
+import { Concerns } from './pages/staff/Concerns';
 import { AuditLog } from './pages/staff/AuditLog';
 import { AccountSettings } from './pages/shared/AccountSettings';
 
@@ -99,6 +100,7 @@ export const router = createBrowserRouter([
           { path: 'matches', element: <StaffMatches /> },
           { path: 'matches/new', element: <ProposeMatch /> },
           { path: 'sessions', element: <Sessions /> },
+          { path: 'concerns', element: <Concerns /> },
           { path: 'audit-log', element: <AuditLog /> },
           { path: 'account', element: <AccountSettings /> },
         ],
