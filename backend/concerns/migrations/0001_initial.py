@@ -21,7 +21,6 @@ class Migration(migrations.Migration):
             name='WelfareConcern',
             fields=[
                 ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
-                ('target_type', models.CharField(choices=[('senior', 'Senior'), ('volunteer', 'Volunteer')], max_length=20)),
                 ('description', models.TextField()),
                 ('status', models.CharField(choices=[('open', 'Open'), ('resolved', 'Resolved')], default='open', max_length=10)),
                 ('resolution_note', models.TextField(blank=True)),
@@ -30,12 +29,10 @@ class Migration(migrations.Migration):
                 ('raised_by', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='raised_concerns', to=settings.AUTH_USER_MODEL)),
                 ('resolved_by', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='resolved_concerns', to=settings.AUTH_USER_MODEL)),
                 ('session', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='welfare_concerns', to='befriending_sessions.session')),
-                ('target_senior', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='welfare_concerns', to='seniors.senior')),
-                ('target_volunteer', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.PROTECT, related_name='concerns_about', to=settings.AUTH_USER_MODEL)),
+                ('target_senior', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='welfare_concerns', to='seniors.senior')),
             ],
             options={
                 'ordering': ['-created_at'],
-                'constraints': [models.CheckConstraint(condition=models.Q(models.Q(('target_senior__isnull', False), ('target_type', 'senior'), ('target_volunteer__isnull', True)), models.Q(('target_senior__isnull', True), ('target_type', 'volunteer'), ('target_volunteer__isnull', False)), _connector='OR'), name='concern_target_senior_consistent')],
             },
         ),
     ]

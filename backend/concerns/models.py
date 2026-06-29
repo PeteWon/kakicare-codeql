@@ -1,8 +1,8 @@
 """Welfare concern model.
 
-FR-V-14: volunteers may raise a welfare concern about a senior or another
-volunteer at any point — during check-out or afterwards — linking it to a
-session when available.
+FR-V-14: volunteers may raise a welfare concern about a senior's wellbeing
+at any point (during check-out or afterwards), linking it to a session when
+available.
 
 SECURITY (SR-AUD-03): WelfareConcern.description and resolution_note are
 sensitive free-text fields. They are stored in this model and MUST NOT be
@@ -18,17 +18,13 @@ from django.db import models
 
 class WelfareConcern(models.Model):
 
-    class TargetType(models.TextChoices):
-        SENIOR    = 'senior',    'Senior'
-        VOLUNTEER = 'volunteer', 'Volunteer'
-
     class Status(models.TextChoices):
         OPEN     = 'open',     'Open'
         RESOLVED = 'resolved', 'Resolved'
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
-    # Always a volunteer — enforced in the view, not at DB level (role is not a
+    # Always a volunteer; enforced in the view, not at DB level (role is not a
     # FK-constrainable property).
     raised_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -45,21 +41,10 @@ class WelfareConcern(models.Model):
         related_name='welfare_concerns',
     )
 
-    target_type = models.CharField(max_length=20, choices=TargetType.choices)
-
     target_senior = models.ForeignKey(
         'seniors.Senior',
         on_delete=models.PROTECT,
-        null=True,
-        blank=True,
         related_name='welfare_concerns',
-    )
-    target_volunteer = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        related_name='concerns_about',
     )
 
     description = models.TextField()
@@ -84,17 +69,6 @@ class WelfareConcern(models.Model):
 
     class Meta:
         ordering = ['-created_at']
-        constraints = [
-            # target_type='senior'    → target_senior set,    target_volunteer null
-            # target_type='volunteer' → target_volunteer set, target_senior null
-            models.CheckConstraint(
-                name='concern_target_senior_consistent',
-                condition=(
-                    models.Q(target_type='senior', target_senior__isnull=False, target_volunteer__isnull=True)
-                    | models.Q(target_type='volunteer', target_volunteer__isnull=False, target_senior__isnull=True)
-                ),
-            ),
-        ]
 
     def __str__(self):
-        return f'WelfareConcern({self.pk}, {self.target_type}, {self.status})'
+        return f'WelfareConcern({self.pk}, senior={self.target_senior_id}, {self.status})'
