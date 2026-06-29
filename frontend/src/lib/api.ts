@@ -1,8 +1,6 @@
 // API layer for the KakiCare backend.
 //
-// Auth functions talk to the real Django backend. Non-auth functions (volunteers,
-// seniors, matches, sessions, audit log) are still MOCK and will be replaced when
-// those backend endpoints are built.
+// All functions talk to the real Django backend over the session-cookie auth flow.
 //
 // CSRF HANDLING
 // Django's CSRF middleware is bypassed by DRF's @csrf_exempt on all APIViews.
@@ -16,20 +14,16 @@
 // ever stored in localStorage or sessionStorage.
 
 import type {
-  AuditLogEntry,
   ConfirmSessionResult,
   FollowUpOutcome,
   LoginResult,
-  Match,
   MfaResult,
   MfaSetupResult,
   Paginated,
   ProfileDocuments,
   ProfileSubmission,
   ProfileSubmissionResult,
-  Senior,
   SeniorWritePayload,
-  Session,
   StaffApplicationDetail,
   StaffApplicationSummary,
   StaffAuditLogEntry,
@@ -42,7 +36,6 @@ import type {
   UserRole,
   VerifyEmailResult,
   VolunteerMatch,
-  VolunteerProfile,
   VolunteerProfileData,
   VolunteerSession,
 } from './types';
@@ -113,81 +106,6 @@ export async function apiFetch<T>(
 
   return data as T;
 }
-
-// ---------------------------------------------------------------------------
-// MOCK data store (non-auth — remove as backend endpoints are built)
-// ---------------------------------------------------------------------------
-
-function delay<T>(value: T, ms = 300): Promise<T> {
-  return new Promise((resolve) => setTimeout(() => resolve(value), ms));
-}
-
-const mockVolunteers: VolunteerProfile[] = [
-  {
-    id: 'vol_1',
-    userId: 'usr_1',
-    phone: '+65 8123 4567',
-    status: 'approved',
-    languages: ['English', 'Malay'],
-    preferredAreas: ['Tampines', 'Bedok'],
-    bio: 'Retired teacher who enjoys listening to stories.',
-    reviewedByStaffId: 'usr_staff_1',
-    reviewedAt: '2026-04-25T10:00:00Z',
-    createdAt: '2026-04-20T09:00:00Z',
-  },
-];
-
-const mockSeniors: Senior[] = [
-  {
-    id: 'sen_1',
-    fullName: 'Mdm Tan Bee Hoon',
-    age: 78,
-    languages: ['Mandarin', 'Hokkien'],
-    area: 'Tampines',
-    careNotes: 'Lives alone, enjoys gardening, mild mobility issues.',
-    emergencyContactName: 'Tan Wei Ming (son)',
-    emergencyContactPhone: '+65 9000 0000',
-    createdByStaffId: 'usr_staff_1',
-    createdAt: '2026-04-10T09:00:00Z',
-  },
-];
-
-const mockMatches: Match[] = [
-  {
-    id: 'mat_1',
-    volunteerId: 'vol_1',
-    seniorId: 'sen_1',
-    status: 'active',
-    startedAt: '2026-05-01T09:00:00Z',
-    endedAt: null,
-    createdByStaffId: 'usr_staff_1',
-  },
-];
-
-const mockSessions: Session[] = [
-  {
-    id: 'ses_1',
-    matchId: 'mat_1',
-    type: 'visit',
-    occurredAt: '2026-05-10T03:00:00Z',
-    durationMinutes: 60,
-    notes: 'Had tea together, helped water the plants. In good spirits.',
-    concernRaised: false,
-    createdAt: '2026-05-10T05:00:00Z',
-  },
-];
-
-const mockAuditLog: AuditLogEntry[] = [
-  {
-    id: 'aud_1',
-    actorId: 'usr_staff_1',
-    action: 'volunteer.approved',
-    targetType: 'VolunteerProfile',
-    targetId: 'vol_1',
-    metadata: null,
-    createdAt: '2026-04-25T10:00:00Z',
-  },
-];
 
 // ---------------------------------------------------------------------------
 // Backend response shape for /api/auth/me (snake_case, Django conventions)
@@ -366,41 +284,6 @@ export const api = {
     await uploadDoc(files.declarationForm, 'declaration');
 
     return { status: 'success' };
-  },
-
-  // --- Volunteers (MOCK) ---------------------------------------------------
-  async listVolunteers(): Promise<VolunteerProfile[]> {
-    // return apiFetch<VolunteerProfile[]>('/api/volunteers');
-    return delay(mockVolunteers); // MOCK
-  },
-
-  async getVolunteer(id: string): Promise<VolunteerProfile> {
-    // return apiFetch<VolunteerProfile>(`/api/volunteers/${id}`);
-    return delay(mockVolunteers.find((v) => v.id === id) ?? mockVolunteers[0]); // MOCK
-  },
-
-  // --- Seniors (MOCK) -------------------------------------------------------
-  async listSeniors(): Promise<Senior[]> {
-    // return apiFetch<Senior[]>('/api/seniors');
-    return delay(mockSeniors); // MOCK
-  },
-
-  // --- Matches (MOCK — staff/non-volunteer facing) --------------------------
-  async listMatches(): Promise<Match[]> {
-    // return apiFetch<Match[]>('/api/matches');
-    return delay(mockMatches); // MOCK
-  },
-
-  // --- Sessions (MOCK — legacy stub) ----------------------------------------
-  async listSessions(matchId: string): Promise<Session[]> {
-    // return apiFetch<Session[]>(`/api/matches/${matchId}/sessions`);
-    return delay(mockSessions.filter((s) => s.matchId === matchId)); // MOCK
-  },
-
-  // --- Audit log (MOCK) -----------------------------------------------------
-  async listAuditLog(): Promise<AuditLogEntry[]> {
-    // return apiFetch<AuditLogEntry[]>('/api/audit-log');
-    return delay(mockAuditLog); // MOCK
   },
 
   // --- Volunteer profile (real) ----------------------------------------------

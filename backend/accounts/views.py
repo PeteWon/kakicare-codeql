@@ -530,18 +530,24 @@ class PasswordResetRequestView(APIView):
 
         reset_url = f'{settings.FRONTEND_BASE_URL}/reset-password?token={raw_token}'
 
-        send_mail(
-            subject='Reset your KakiCare password',
-            message=(
-                f'Hi {user.full_name},\n\n'
-                f'Click the link below to reset your password. '
-                f'The link expires in {_PASSWORD_RESET_EXPIRY_HOURS} hour(s).\n\n'
-                f'{reset_url}\n\n'
-                f'If you did not request a password reset, you can ignore this email.'
-            ),
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[user.email],
-        )
+        # Email delivery is best-effort: a transient SMTP failure must not 500 the
+        # request (and must not change the generic response, for anti-enumeration).
+        try:
+            send_mail(
+                subject='Reset your KakiCare password',
+                message=(
+                    f'Hi {user.full_name},\n\n'
+                    f'Click the link below to reset your password. '
+                    f'The link expires in {_PASSWORD_RESET_EXPIRY_HOURS} hour(s).\n\n'
+                    f'{reset_url}\n\n'
+                    f'If you did not request a password reset, you can ignore this email.'
+                ),
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[user.email],
+                fail_silently=False,
+            )
+        except Exception:
+            logger.exception('Failed to send password-reset email to %s', user.email)
 
         return generic_ok
 
@@ -667,18 +673,24 @@ def _issue_and_send_verification_token(user: User) -> None:
 
     verify_url = f'{settings.FRONTEND_BASE_URL}/verify-email?token={raw_token}'
 
-    send_mail(
-        subject='Verify your KakiCare email address',
-        message=(
-            f'Hi {user.full_name},\n\n'
-            f'Please verify your email address by clicking the link below.\n'
-            f'The link expires in {_TOKEN_EXPIRY_HOURS} hours.\n\n'
-            f'{verify_url}\n\n'
-            f'If you did not register for KakiCare, you can ignore this email.'
-        ),
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        recipient_list=[user.email],
-    )
+    # Best-effort: a transient SMTP failure must not 500 registration. The user
+    # row already exists; an unverified user can be re-sent a link later.
+    try:
+        send_mail(
+            subject='Verify your KakiCare email address',
+            message=(
+                f'Hi {user.full_name},\n\n'
+                f'Please verify your email address by clicking the link below.\n'
+                f'The link expires in {_TOKEN_EXPIRY_HOURS} hours.\n\n'
+                f'{verify_url}\n\n'
+                f'If you did not register for KakiCare, you can ignore this email.'
+            ),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            fail_silently=False,
+        )
+    except Exception:
+        logger.exception('Failed to send verification email to %s', user.email)
 
 
 def issue_and_send_staff_invite(user: User) -> None:
@@ -709,19 +721,26 @@ def issue_and_send_staff_invite(user: User) -> None:
     # logged in yet when they click this link.
     invite_url = f'{settings.FRONTEND_BASE_URL}/accept-invite?token={raw_token}'
 
-    send_mail(
-        subject='You have been invited to KakiCare',
-        message=(
-            f'Hi {user.full_name},\n\n'
-            f'A KakiCare administrator has created a staff account for you. '
-            f'Click the link below to set your password and activate your account. '
-            f'The link expires in {_STAFF_INVITE_EXPIRY_HOURS} hours.\n\n'
-            f'{invite_url}\n\n'
-            f'If you were not expecting this invitation, you can ignore this email.'
-        ),
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        recipient_list=[user.email],
-    )
+    # Best-effort: a transient SMTP failure must not raise out of the admin
+    # save_model (which would 500 the admin page). The token is already stored, so
+    # the admin can use the "Resend staff invite" action to retry delivery.
+    try:
+        send_mail(
+            subject='You have been invited to KakiCare',
+            message=(
+                f'Hi {user.full_name},\n\n'
+                f'A KakiCare administrator has created a staff account for you. '
+                f'Click the link below to set your password and activate your account. '
+                f'The link expires in {_STAFF_INVITE_EXPIRY_HOURS} hours.\n\n'
+                f'{invite_url}\n\n'
+                f'If you were not expecting this invitation, you can ignore this email.'
+            ),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            fail_silently=False,
+        )
+    except Exception:
+        logger.exception('Failed to send staff-invite email to %s', user.email)
 
 
 class AcceptInviteView(APIView):
