@@ -17,6 +17,7 @@
 
 import type {
   AuditLogEntry,
+  ConcernStatus,
   ConfirmSessionResult,
   FollowUpOutcome,
   LoginResult,
@@ -45,6 +46,7 @@ import type {
   VolunteerProfile,
   VolunteerProfileData,
   VolunteerSession,
+  WelfareConcern,
 } from './types';
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:8000';
@@ -172,7 +174,6 @@ const mockSessions: Session[] = [
     occurredAt: '2026-05-10T03:00:00Z',
     durationMinutes: 60,
     notes: 'Had tea together, helped water the plants. In good spirits.',
-    concernRaised: false,
     createdAt: '2026-05-10T05:00:00Z',
   },
 ];
@@ -470,6 +471,37 @@ export const api = {
     return apiFetch<VolunteerSession>(`/api/volunteer/sessions/${id}/checkout/`, {
       method: 'POST',
       body: { volunteer_note: volunteerNote ?? '' },
+    });
+  },
+
+  // --- Volunteer welfare concerns (real) ------------------------------------
+
+  async submitWelfareConcern(payload: {
+    target_senior: number;
+    description: string;
+    session?: number;
+  }): Promise<WelfareConcern> {
+    return apiFetch<WelfareConcern>('/api/volunteer/concerns/', {
+      method: 'POST',
+      body: payload,
+    });
+  },
+
+  // --- Staff welfare concerns (real) ----------------------------------------
+
+  async getConcerns(status?: ConcernStatus): Promise<Paginated<WelfareConcern>> {
+    const qs = new URLSearchParams();
+    if (status) qs.set('status', status);
+    const query = qs.toString();
+    return apiFetch<Paginated<WelfareConcern>>(
+      `/api/staff/concerns/${query ? `?${query}` : ''}`,
+    );
+  },
+
+  async resolveConcern(id: string, resolutionNote?: string): Promise<WelfareConcern> {
+    return apiFetch<WelfareConcern>(`/api/staff/concerns/${id}/resolve/`, {
+      method: 'POST',
+      body: { resolution_note: resolutionNote ?? '' },
     });
   },
 
