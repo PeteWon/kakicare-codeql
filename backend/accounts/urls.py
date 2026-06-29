@@ -13,12 +13,14 @@ from .views import (
     PasswordResetConfirmView,
     PasswordResetRequestView,
     RegisterView,
+    ResendVerificationView,
     VerifyEmailView,
 )
 
 urlpatterns = [
     path('register', RegisterView.as_view(), name='auth-register'),
     path('verify-email', VerifyEmailView.as_view(), name='auth-verify-email'),
+    path('resend-verification', ResendVerificationView.as_view(), name='auth-resend-verification'),
     path('accept-invite', AcceptInviteView.as_view(), name='auth-accept-invite'),
     path('login', LoginView.as_view(), name='auth-login'),
     path('logout', LogoutView.as_view(), name='auth-logout'),

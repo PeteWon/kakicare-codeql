@@ -286,6 +286,16 @@ export const api = {
     });
   },
 
+  async resendVerification(email: string): Promise<void> {
+    // Re-sends the email-verification link to an unverified account. Backend
+    // always returns 200 with a generic message (anti-enumeration) — the caller
+    // must show the same confirmation regardless of outcome.
+    await apiFetch('/api/auth/resend-verification', {
+      method: 'POST',
+      body: { email },
+    });
+  },
+
   async confirmPasswordReset(token: string, newPassword: string): Promise<void> {
     await apiFetch('/api/auth/password-reset/confirm', {
       method: 'POST',

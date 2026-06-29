@@ -38,6 +38,7 @@ from .serializers import (
     PasswordResetConfirmSerializer,
     PasswordResetRequestSerializer,
     RegisterSerializer,
+    ResendVerificationSerializer,
     VerifyEmailSerializer,
 )
 
@@ -122,6 +123,22 @@ class RegistrationRateThrottle(SimpleRateThrottle):
     """
 
     scope = 'register'
+
+    def parse_rate(self, rate):
+        return (5, 3600)
+
+    def get_cache_key(self, request, view):
+        return self.cache_format % {'scope': self.scope, 'ident': self.get_ident(request)}
+
+
+class ResendVerificationRateThrottle(SimpleRateThrottle):
+    """SR-AUTH-04: 5 resend-verification requests per hour, keyed by source IP.
+
+    Each request can trigger an outbound verification email — throttling (as on
+    registration) stops an attacker abusing the SMTP relay.
+    """
+
+    scope = 'resend_verification'
 
     def parse_rate(self, rate):
         return (5, 3600)
@@ -679,6 +696,68 @@ def _issue_and_send_verification_token(user: User) -> None:
         from_email=settings.DEFAULT_FROM_EMAIL,
         recipient_list=[user.email],
     )
+
+
+class ResendVerificationView(APIView):
+    """POST /api/auth/resend-verification
+
+    Re-sends the email-verification link to an account that has registered but
+    not yet verified. This is the self-service recovery path for a lost/expired
+    verification email — without it a volunteer whose first email never arrived
+    is permanently stuck (login is refused while unverified, and re-registering
+    is a no-op because the email already exists).
+
+    SR-AUTH-06 (anti-enumeration): the response is identical whether or not the
+    email maps to an unverified account, exactly like password-reset/request, so
+    the endpoint cannot be used to probe which addresses are registered or which
+    are already verified.
+    """
+
+    permission_classes = [AllowAny]
+    throttle_classes = [ResendVerificationRateThrottle]
+
+    def post(self, request):
+        # Single generic response — never branch on account existence/state.
+        generic_ok = Response(
+            {'detail': 'If this email needs verification, a new link has been sent.'},
+            status=status.HTTP_200_OK,
+        )
+
+        serializer = ResendVerificationSerializer(data=request.data)
+        if not serializer.is_valid():
+            return generic_ok
+
+        email = serializer.validated_data['email']
+
+        # Only unverified, active accounts are eligible. Already-verified or
+        # nonexistent emails fall through to the same generic response.
+        try:
+            user = User.objects.get(
+                email=email, is_active=True, is_email_verified=False
+            )
+        except User.DoesNotExist:
+            return generic_ok
+
+        # Expire any outstanding verification tokens before issuing a new one so
+        # the inbox never accumulates multiple live links (mirrors password-reset).
+        user.email_verification_tokens.filter(used_at__isnull=True).update(
+            used_at=timezone.now()
+        )
+
+        # Guard the send: a prod SMTP failure must not surface as a 500 (which
+        # would also leak that the email is a real unverified account). The token
+        # is issued regardless; the user can retry the resend.
+        try:
+            _issue_and_send_verification_token(user)
+        except Exception:
+            logger.exception(
+                'Failed to send verification email on resend for user %s', user.pk
+            )
+
+        record_audit(
+            user=user, action='auth.email.resend', request_ip=_get_ip(request)
+        )
+        return generic_ok
 
 
 def issue_and_send_staff_invite(user: User) -> None:
