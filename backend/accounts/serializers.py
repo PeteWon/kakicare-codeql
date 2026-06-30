@@ -54,6 +54,20 @@ class VerifyEmailSerializer(serializers.Serializer):
     token = serializers.CharField(min_length=1)
 
 
+class ResendVerificationSerializer(serializers.Serializer):
+    """Input for POST /api/auth/resend-verification.
+
+    Email only — the endpoint re-sends the verification link to an unverified
+    account. Like password-reset, the response is identical whether or not the
+    email maps to an eligible account (SR-AUTH-06 anti-enumeration).
+    """
+
+    email = serializers.EmailField()
+
+    def validate_email(self, value):
+        return value.strip().lower()
+
+
 class LoginSerializer(serializers.Serializer):
     """Input validation for POST /api/auth/login.
 

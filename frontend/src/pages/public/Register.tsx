@@ -102,6 +102,15 @@ export function Register() {
               Back to sign in
             </Button>
           </Link>
+          <p className="mt-4 text-sm text-primary-600">
+            Didn't get the email?{' '}
+            <Link
+              to="/resend-verification"
+              className="font-medium text-primary-700 hover:text-primary-900"
+            >
+              Resend verification link
+            </Link>
+          </p>
         </Card>
       </section>
     );

@@ -377,6 +377,65 @@ class EmailVerificationTests(KakiCareAPITestCase):
         self.assertEqual(token_obj.token_hash, _hash_token(raw))
 
 
+class ResendVerificationTests(KakiCareAPITestCase):
+    """Self-service recovery for a lost/expired verification email."""
+
+    def setUp(self):
+        super().setUp()
+        self.url = reverse('auth-resend-verification')
+        self.user = create_volunteer(
+            email='unverified@example.com', is_email_verified=False
+        )
+
+    def test_resend_issues_new_token_and_sends_email(self):
+        resp = self.client.post(self.url, {'email': 'unverified@example.com'})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(
+            EmailVerificationToken.objects.filter(
+                user=self.user, used_at__isnull=True
+            ).count(),
+            1,
+        )
+
+    def test_resend_expires_previous_outstanding_token(self):
+        # An earlier (e.g. lost) verification token is outstanding.
+        old = EmailVerificationToken.objects.create(
+            user=self.user,
+            token_hash=_hash_token('old-token'),
+            expires_at=timezone.now() + timedelta(hours=24),
+        )
+        resp = self.client.post(self.url, {'email': 'unverified@example.com'})
+        self.assertEqual(resp.status_code, 200)
+        old.refresh_from_db()
+        # Old link is invalidated so only one live link ever exists.
+        self.assertIsNotNone(old.used_at)
+        self.assertEqual(
+            EmailVerificationToken.objects.filter(
+                user=self.user, used_at__isnull=True
+            ).count(),
+            1,
+        )
+
+    def test_already_verified_email_is_a_noop_but_generic_200(self):
+        verified = create_volunteer(
+            email='done@example.com', is_email_verified=True
+        )
+        resp = self.client.post(self.url, {'email': 'done@example.com'})
+        # SR-AUTH-06: identical generic response, but no email/token issued.
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertEqual(
+            EmailVerificationToken.objects.filter(user=verified).count(), 0
+        )
+
+    def test_unknown_email_is_a_noop_but_generic_200(self):
+        resp = self.client.post(self.url, {'email': 'nobody@example.com'})
+        # SR-AUTH-06: cannot distinguish unknown from known/unverified.
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(len(mail.outbox), 0)
+
+
 class StaffInviteTests(KakiCareAPITestCase):
     """Staff onboarding via emailed invite (admin provisions -> staff sets password)."""
 

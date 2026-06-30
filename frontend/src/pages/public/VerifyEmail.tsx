@@ -86,8 +86,7 @@ export function VerifyEmail() {
               Verification failed
             </h1>
             <p className="mt-2 text-primary-600">{GENERIC_ERROR}</p>
-            {/* Placeholder action — wire to a "resend verification" flow later. */}
-            <Link to="/register" className="mt-6 block">
+            <Link to="/resend-verification" className="mt-6 block">
               <Button fullWidth size="lg" variant="secondary">
                 Request a new link
               </Button>

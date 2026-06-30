@@ -23,6 +23,7 @@ import { Login } from './pages/public/Login';
 import { Register } from './pages/public/Register';
 import { VerifyEmail } from './pages/public/VerifyEmail';
 import { ForgotPassword } from './pages/public/ForgotPassword';
+import { ResendVerification } from './pages/public/ResendVerification';
 import { ResetPassword } from './pages/public/ResetPassword';
 import { MfaResetRequest } from './pages/public/MfaResetRequest';
 import { AcceptInvite } from './pages/public/AcceptInvite';
@@ -55,6 +56,7 @@ export const router = createBrowserRouter([
       { path: '/login', element: <Login /> },
       { path: '/register', element: <Register /> },
       { path: '/verify-email', element: <VerifyEmail /> },
+      { path: '/resend-verification', element: <ResendVerification /> },
       { path: '/forgot-password', element: <ForgotPassword /> },
       { path: '/mfa-reset', element: <MfaResetRequest /> },
       { path: '/reset-password', element: <ResetPassword /> },

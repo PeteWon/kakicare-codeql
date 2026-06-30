@@ -41,6 +41,7 @@ from .serializers import (
     PasswordResetConfirmSerializer,
     PasswordResetRequestSerializer,
     RegisterSerializer,
+    ResendVerificationSerializer,
     VerifyEmailSerializer,
 )
 
@@ -125,6 +126,22 @@ class RegistrationRateThrottle(SimpleRateThrottle):
     """
 
     scope = 'register'
+
+    def parse_rate(self, rate):
+        return (5, 3600)
+
+    def get_cache_key(self, request, view):
+        return self.cache_format % {'scope': self.scope, 'ident': self.get_ident(request)}
+
+
+class ResendVerificationRateThrottle(SimpleRateThrottle):
+    """SR-AUTH-04: 5 resend-verification requests per hour, keyed by source IP.
+
+    Each request can trigger an outbound verification email — throttling (as on
+    registration) stops an attacker abusing the SMTP relay.
+    """
+
+    scope = 'resend_verification'
 
     def parse_rate(self, rate):
         return (5, 3600)
@@ -533,18 +550,24 @@ class PasswordResetRequestView(APIView):
 
         reset_url = f'{settings.FRONTEND_BASE_URL}/reset-password?token={raw_token}'
 
-        send_mail(
-            subject='Reset your KakiCare password',
-            message=(
-                f'Hi {user.full_name},\n\n'
-                f'Click the link below to reset your password. '
-                f'The link expires in {_PASSWORD_RESET_EXPIRY_HOURS} hour(s).\n\n'
-                f'{reset_url}\n\n'
-                f'If you did not request a password reset, you can ignore this email.'
-            ),
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[user.email],
-        )
+        # Email delivery is best-effort: a transient SMTP failure must not 500 the
+        # request (and must not change the generic response, for anti-enumeration).
+        try:
+            send_mail(
+                subject='Reset your KakiCare password',
+                message=(
+                    f'Hi {user.full_name},\n\n'
+                    f'Click the link below to reset your password. '
+                    f'The link expires in {_PASSWORD_RESET_EXPIRY_HOURS} hour(s).\n\n'
+                    f'{reset_url}\n\n'
+                    f'If you did not request a password reset, you can ignore this email.'
+                ),
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[user.email],
+                fail_silently=False,
+            )
+        except Exception:
+            logger.exception('Failed to send password-reset email to %s', user.email)
 
         return generic_ok
 
@@ -830,18 +853,86 @@ def _issue_and_send_verification_token(user: User) -> None:
 
     verify_url = f'{settings.FRONTEND_BASE_URL}/verify-email?token={raw_token}'
 
-    send_mail(
-        subject='Verify your KakiCare email address',
-        message=(
-            f'Hi {user.full_name},\n\n'
-            f'Please verify your email address by clicking the link below.\n'
-            f'The link expires in {_TOKEN_EXPIRY_HOURS} hours.\n\n'
-            f'{verify_url}\n\n'
-            f'If you did not register for KakiCare, you can ignore this email.'
-        ),
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        recipient_list=[user.email],
-    )
+    # Best-effort: a transient SMTP failure must not 500 registration. The user
+    # row already exists; an unverified user can be re-sent a link later.
+    try:
+        send_mail(
+            subject='Verify your KakiCare email address',
+            message=(
+                f'Hi {user.full_name},\n\n'
+                f'Please verify your email address by clicking the link below.\n'
+                f'The link expires in {_TOKEN_EXPIRY_HOURS} hours.\n\n'
+                f'{verify_url}\n\n'
+                f'If you did not register for KakiCare, you can ignore this email.'
+            ),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            fail_silently=False,
+        )
+    except Exception:
+        logger.exception('Failed to send verification email to %s', user.email)
+
+
+class ResendVerificationView(APIView):
+    """POST /api/auth/resend-verification
+
+    Re-sends the email-verification link to an account that has registered but
+    not yet verified. This is the self-service recovery path for a lost/expired
+    verification email — without it a volunteer whose first email never arrived
+    is permanently stuck (login is refused while unverified, and re-registering
+    is a no-op because the email already exists).
+
+    SR-AUTH-06 (anti-enumeration): the response is identical whether or not the
+    email maps to an unverified account, exactly like password-reset/request, so
+    the endpoint cannot be used to probe which addresses are registered or which
+    are already verified.
+    """
+
+    permission_classes = [AllowAny]
+    throttle_classes = [ResendVerificationRateThrottle]
+
+    def post(self, request):
+        # Single generic response — never branch on account existence/state.
+        generic_ok = Response(
+            {'detail': 'If this email needs verification, a new link has been sent.'},
+            status=status.HTTP_200_OK,
+        )
+
+        serializer = ResendVerificationSerializer(data=request.data)
+        if not serializer.is_valid():
+            return generic_ok
+
+        email = serializer.validated_data['email']
+
+        # Only unverified, active accounts are eligible. Already-verified or
+        # nonexistent emails fall through to the same generic response.
+        try:
+            user = User.objects.get(
+                email=email, is_active=True, is_email_verified=False
+            )
+        except User.DoesNotExist:
+            return generic_ok
+
+        # Expire any outstanding verification tokens before issuing a new one so
+        # the inbox never accumulates multiple live links (mirrors password-reset).
+        user.email_verification_tokens.filter(used_at__isnull=True).update(
+            used_at=timezone.now()
+        )
+
+        # Guard the send: a prod SMTP failure must not surface as a 500 (which
+        # would also leak that the email is a real unverified account). The token
+        # is issued regardless; the user can retry the resend.
+        try:
+            _issue_and_send_verification_token(user)
+        except Exception:
+            logger.exception(
+                'Failed to send verification email on resend for user %s', user.pk
+            )
+
+        record_audit(
+            user=user, action='auth.email.resend', request_ip=_get_ip(request)
+        )
+        return generic_ok
 
 
 def issue_and_send_staff_invite(user: User) -> None:
@@ -872,19 +963,26 @@ def issue_and_send_staff_invite(user: User) -> None:
     # logged in yet when they click this link.
     invite_url = f'{settings.FRONTEND_BASE_URL}/accept-invite?token={raw_token}'
 
-    send_mail(
-        subject='You have been invited to KakiCare',
-        message=(
-            f'Hi {user.full_name},\n\n'
-            f'A KakiCare administrator has created a staff account for you. '
-            f'Click the link below to set your password and activate your account. '
-            f'The link expires in {_STAFF_INVITE_EXPIRY_HOURS} hours.\n\n'
-            f'{invite_url}\n\n'
-            f'If you were not expecting this invitation, you can ignore this email.'
-        ),
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        recipient_list=[user.email],
-    )
+    # Best-effort: a transient SMTP failure must not raise out of the admin
+    # save_model (which would 500 the admin page). The token is already stored, so
+    # the admin can use the "Resend staff invite" action to retry delivery.
+    try:
+        send_mail(
+            subject='You have been invited to KakiCare',
+            message=(
+                f'Hi {user.full_name},\n\n'
+                f'A KakiCare administrator has created a staff account for you. '
+                f'Click the link below to set your password and activate your account. '
+                f'The link expires in {_STAFF_INVITE_EXPIRY_HOURS} hours.\n\n'
+                f'{invite_url}\n\n'
+                f'If you were not expecting this invitation, you can ignore this email.'
+            ),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            fail_silently=False,
+        )
+    except Exception:
+        logger.exception('Failed to send staff-invite email to %s', user.email)
 
 
 class AcceptInviteView(APIView):
