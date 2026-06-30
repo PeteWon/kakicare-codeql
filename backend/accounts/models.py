@@ -153,6 +153,50 @@ class StaffInviteToken(_HashedToken):
         return f'StaffInviteToken(user={self.user_id})'
 
 
+class MFAResetRequest(models.Model):
+    """Identity-verified request to reset a user's MFA enrollment."""
+
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Pending'
+        RESOLVED = 'resolved', 'Resolved'
+        REJECTED = 'rejected', 'Rejected'
+
+    requester = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name='mfa_reset_requests'
+    )
+    target_user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name='mfa_reset_targets'
+    )
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.PENDING
+    )
+    reason = models.CharField(max_length=255, blank=True)
+
+    verification_method = models.CharField(max_length=255, blank=True)
+    verification_outcome = models.CharField(max_length=255, blank=True)
+
+    reviewed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='reviewed_mfa_reset_requests',
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return (
+            f'MFAResetRequest(requester={self.requester_id}, '
+            f'target={self.target_user_id}, status={self.status})'
+        )
+
+
 class MFABackupCode(models.Model):
     """Single-use recovery code for TOTP MFA.
 

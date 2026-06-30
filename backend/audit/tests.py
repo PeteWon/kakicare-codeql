@@ -44,8 +44,10 @@ class AuditLogApiTests(KakiCareAPITestCase):
             action='senior.read',
             target_type='Senior',
             target_id=123,
+            metadata={'review': 'ok'},
             request_ip='203.0.113.7',
         )
         self.assertEqual(entry.action, 'senior.read')
         self.assertEqual(entry.target_id, '123')
         self.assertEqual(entry.user_role, self.staff.role)
+        self.assertEqual(entry.metadata['review'], 'ok')

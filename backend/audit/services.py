@@ -23,6 +23,7 @@ def record_audit(
     action: str,
     target_type: str = '',
     target_id: str | int = '',
+    metadata: dict | None = None,
     request_ip: str | None = None,
     user_role: str | None = None,
 ) -> AuditLogEntry:
@@ -33,6 +34,7 @@ def record_audit(
         action: short action string, e.g. "senior.viewed", "volunteer.approved".
         target_type: type name of the affected object, e.g. "Senior".
         target_id: id of the affected object (no contents).
+        metadata: optional structured context for the action.
         request_ip: source IP of the request, if available.
         user_role: overrides the role recorded; defaults to user.role if present.
     """
@@ -45,5 +47,6 @@ def record_audit(
         action=action,
         target_type=target_type,
         target_id=str(target_id) if target_id != '' else '',
+        metadata=metadata or {},
         request_ip=request_ip,
     )
