@@ -1,10 +1,10 @@
 // SECURITY NOTE (SR-AUTH-06 — anti-enumeration):
 //   The backend returns an identical 200 response whether the submitted email is
-//   registered or not. This page reflects that: after submitting we ALWAYS show
-//   the same confirmation message regardless of outcome. We also swallow API
-//   errors rather than branching on them, so a network or 4xx error cannot
-//   reveal information about the account state. Never add a branch here that
-//   shows a different message when the email is known vs unknown.
+//   an unverified account, an already-verified account, or unknown. This page
+//   reflects that: after submitting we ALWAYS show the same confirmation message
+//   regardless of outcome, and we swallow API errors rather than branching on
+//   them, so a network or 4xx error cannot reveal account state. Never add a
+//   branch here that shows a different message based on the email.
 //
 // - Auth state lives in the HttpOnly session cookie. No token is stored client-side.
 // - Client-side email validation is USABILITY ONLY (SR-INPUT-01).
@@ -19,8 +19,8 @@ import { usePageTitle } from '@/lib/usePageTitle';
 
 type PageState = 'form' | 'sent';
 
-export function ForgotPassword() {
-  usePageTitle('Reset password');
+export function ResendVerification() {
+  usePageTitle('Resend verification email');
   const [pageState, setPageState] = useState<PageState>('form');
   const [email, setEmail] = useState('');
   const [emailError, setEmailError] = useState<string | null>(null);
@@ -35,10 +35,11 @@ export function ForgotPassword() {
 
     setSubmitting(true);
     try {
-      await api.requestPasswordReset(email);
+      await api.resendVerification(email);
     } catch {
-      // SR-AUTH-06: intentionally swallowed — any error branch here could
-      // reveal whether the email is registered. Always show the generic message.
+      // SR-AUTH-06: intentionally swallowed — any error branch here could reveal
+      // whether the email is a registered/unverified account. Always show the
+      // generic message.
     } finally {
       setSubmitting(false);
     }
@@ -53,10 +54,11 @@ export function ForgotPassword() {
           <h1 className="font-serif text-2xl font-semibold text-primary-900">
             Check your email
           </h1>
-          {/* SR-AUTH-06: identical message whether or not the email is registered. */}
+          {/* SR-AUTH-06: identical message whether or not the email needs verifying. */}
           <p className="text-primary-600">
-            If <strong>{email}</strong> is registered, we've sent a password reset
-            link. Check your inbox and spam folder — the link expires in 1 hour.
+            If <strong>{email}</strong> needs verification, we've sent a new
+            verification link. Check your inbox and spam folder — the link expires
+            in 24 hours.
           </p>
           <Link to="/login" className="block">
             <Button fullWidth variant="secondary">
@@ -71,10 +73,11 @@ export function ForgotPassword() {
   return (
     <section className="mx-auto max-w-md py-8">
       <h1 className="font-serif text-3xl font-semibold text-primary-900">
-        Reset your password
+        Resend verification email
       </h1>
       <p className="mt-2 text-primary-600">
-        Enter your email and we'll send you a reset link.
+        Didn't get the verification link, or did it expire? Enter your email and
+        we'll send a new one.
       </p>
 
       <Card className="mt-6">
@@ -94,25 +97,18 @@ export function ForgotPassword() {
           />
 
           <Button type="submit" fullWidth disabled={submitting}>
-            {submitting ? 'Sending…' : 'Send reset link'}
+            {submitting ? 'Sending…' : 'Send verification link'}
           </Button>
         </form>
       </Card>
 
       <p className="mt-6 text-center text-sm text-primary-600">
-        Remembered your password?{' '}
+        Already verified?{' '}
         <Link
           to="/login"
           className="font-medium text-primary-700 hover:text-primary-900"
         >
           Sign in
-        </Link>
-      </p>
-
-      <p className="mt-3 text-center text-sm text-primary-500">
-        Need an MFA reset instead?{' '}
-        <Link to="/mfa-reset" className="font-medium text-primary-700 hover:text-primary-900">
-          Request a reset
         </Link>
       </p>
     </section>

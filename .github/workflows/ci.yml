@@ -49,6 +49,13 @@ jobs:
       - name: Type-check (tsc --noEmit)
         run: npm run lint
 
+      # D2 test-automation evidence. Report-only for now (continue-on-error)
+      # since this suite is brand new — tighten to blocking once it's proven
+      # stable across a few merges, same pattern as the dependency audits above.
+      - name: Run tests
+        continue-on-error: true
+        run: npm run test
+
       - name: Production build
         run: npm run build
 
@@ -88,7 +95,10 @@ jobs:
 
       - uses: actions/setup-python@v6
         with:
-          python-version: '3.11'
+          # Match the deployed image (backend/Dockerfile → python:3.13-slim) so
+          # the version we test on is the version we ship. 3.13 is the newest on
+          # Django 5.2's supported matrix (3.10–3.13).
+          python-version: '3.13'
           cache: 'pip'
           cache-dependency-path: backend/requirements.txt
 

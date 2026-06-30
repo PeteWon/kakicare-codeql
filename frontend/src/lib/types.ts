@@ -31,6 +31,17 @@ export type MfaResult =
   | { status: 'enrolled' } // new TOTP device confirmed (post-login enrolment)
   | { status: 'invalid' }; // wrong/expired code — generic failure
 
+export interface MfaResetRequestResult {
+  // SECURITY: the backend intentionally returns only a generic message — no
+  // request_id or other success-only field — to avoid a credential oracle.
+  detail: string;
+}
+
+export interface MfaResetResolvePayload {
+  verification_method?: string;
+  verification_outcome?: string;
+}
+
 export interface MfaSetupResult {
   config_url: string;  // otpauth:// URI for authenticator apps
   secret_key: string;  // base32 secret for manual entry
@@ -480,6 +491,7 @@ export interface StaffAuditLogEntry {
   action: string;
   target_type: string;
   target_id: string;
+  metadata: Record<string, unknown> | null;
   request_ip: string | null;
   timestamp: ISODateString;
 }

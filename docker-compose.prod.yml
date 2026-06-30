@@ -1,9 +1,10 @@
 # Production stack for the EC2 deployment.
 #
-#   nginx   :80, :443 (pub)  — TLS termination, SPA, reverse-proxy to Django
-#   web     :8000 (internal) — Django + gunicorn
-#   db      :5432 (internal) — PostgreSQL 16
-#   certbot (internal)       — Let's Encrypt cert issuance + 12-hourly renewal
+#   nginx     :80, :443 (pub)  — TLS termination, SPA, reverse-proxy to Django
+#   web       :8000 (internal) — Django + gunicorn
+#   db        :5432 (internal) — PostgreSQL 16
+#   certbot   (internal)       — Let's Encrypt cert issuance + 12-hourly renewal
+#   scheduler (internal)       — periodic flag_missed_sessions (5-min loop)
 #
 # Only nginx publishes ports. Django and Postgres are reachable only inside
 # the Docker network.
@@ -50,6 +51,35 @@ services:
     volumes:
       - static_files:/app/staticfiles
       - private_media:/app/private_media
+
+  # Runs flag_missed_sessions on a 5-minute loop so 'confirmed' sessions that
+  # were never checked into transition to 'missed' once the grace period passes.
+  # 'missed' is the only status from which staff can record a follow-up, so
+  # without this the welfare follow-up flow never fires in production.
+  #
+  # Reuses the backend image but overrides the entrypoint: migrate/collectstatic
+  # are owned by `web`, so we skip them here and just drop to the non-root `app`
+  # user (via gosu) and loop. The loop tolerates transient DB errors (e.g. before
+  # web has finished migrating) — it logs and retries on the next tick. Mirrors
+  # the certbot loop pattern so TERM shuts it down cleanly.
+  scheduler:
+    build:
+      context: ./backend
+    container_name: kakicare-scheduler-prod
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    depends_on:
+      db:
+        condition: service_healthy
+      web:
+        condition: service_started
+    entrypoint:
+      - gosu
+      - app
+      - /bin/sh
+      - -c
+      - 'trap exit TERM; while :; do python manage.py flag_missed_sessions || true; sleep 300 & wait $$!; done'
 
   nginx:
     build:

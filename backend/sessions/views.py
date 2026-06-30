@@ -180,6 +180,16 @@ class VolunteerSessionListCreateView(_SessionAuditMixin, APIView):
         except Match.DoesNotExist:
             return Response(status=status.HTTP_404_NOT_FOUND)
 
+        # Block scheduling against a deactivated senior. Defence-in-depth:
+        # deactivating a senior also ends their matches (see SeniorDeactivateView),
+        # but if an ACTIVE match is still in flight when the senior is deactivated,
+        # this guard ensures no new session can be booked against an inactive record.
+        if not match.senior.is_active:
+            return Response(
+                {'detail': 'Cannot book a session for a senior whose record is inactive.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         # FR-S-13 / SR-S-13: block scheduling if senior's consent is not recorded.
         if match.senior.consent_status != Senior.ConsentStatus.GIVEN:
             return Response(
