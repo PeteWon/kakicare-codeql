@@ -138,11 +138,15 @@ function DocumentCard({ doc }: { doc: DocumentInfo }) {
           {previewError && (
             <p className="text-xs text-primary-400 px-4 py-6">Preview unavailable.</p>
           )}
-          {previewUrl && !previewLoading && (
+          {previewUrl && !previewLoading && !previewError && (
             <img
               src={previewUrl}
               alt={`Preview of ${doc.original_filename}`}
               className="max-h-64 w-full object-contain"
+              // Covers the case where the fetch succeeds but the image element
+              // still fails to render (e.g. a CSP block or corrupt bytes) — the
+              // catch() only handles fetch failures.
+              onError={() => setPreviewError(true)}
             />
           )}
         </div>
