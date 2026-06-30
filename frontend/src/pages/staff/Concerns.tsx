@@ -265,6 +265,12 @@ export function Concerns() {
                             <p className="text-sm font-medium text-red-800">
                               Resolve concern for {concern.target_senior.full_name}:
                             </p>
+                            <div className="rounded-xl border border-red-200 bg-red-100 px-3 py-2">
+                              <p className="text-xs font-medium text-red-800">Concern reported:</p>
+                              <p className="mt-1 whitespace-pre-wrap text-sm text-primary-900">
+                                {concern.description}
+                              </p>
+                            </div>
                             <textarea
                               value={resolutionNote}
                               onChange={(e) => setResolutionNote(e.target.value)}
