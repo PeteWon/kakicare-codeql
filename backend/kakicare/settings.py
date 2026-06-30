@@ -237,7 +237,10 @@ SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
 # points to a private directory; files are only ever returned via an
 # authenticated, authorised endpoint (to be built later). There is intentionally
 # no public MEDIA_URL static mapping for these files.
-MEDIA_ROOT = env('MEDIA_ROOT', default=str(BASE_DIR.parent / 'private_media'))
+# Default is BASE_DIR/private_media so it matches the container layout
+# (/app/private_media, created in the Dockerfile and mounted as a volume in
+# docker-compose.prod.yml). Production still sets MEDIA_ROOT explicitly via env.
+MEDIA_ROOT = env('MEDIA_ROOT', default=str(BASE_DIR / 'private_media'))
 
 
 # --- Internationalization ----------------------------------------------------
