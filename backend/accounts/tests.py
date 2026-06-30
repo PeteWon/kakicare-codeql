@@ -12,6 +12,7 @@ import re
 from datetime import timedelta
 
 from django.core import mail
+from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -597,3 +598,39 @@ class StaffInviteTests(KakiCareAPITestCase):
         token_obj = StaffInviteToken.objects.get(user=self.user, used_at__isnull=True)
         self.assertNotEqual(token_obj.token_hash, token)
         self.assertEqual(token_obj.token_hash, _hash_token(token))
+
+
+class AdminPortalMfaLoginTests(KakiCareAPITestCase):
+    """Regression test for issue #107.
+
+    django-otp's own device resolution (django_otp.device_classes) excludes
+    proxy models, so the Django admin's OTP login always resolves devices as
+    the base TOTPDevice, never our EncryptedTOTPDevice proxy. Without the
+    AccountsConfig.ready() patch, this crashed with a binascii.Error because
+    the base bin_key tried to unhexlify the Fernet-encrypted key directly.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.admin_user = User.objects.create_superuser(
+            email='admin-mfa-test@example.com',
+            password=DEFAULT_PASSWORD,
+            full_name='Admin MfaTest',
+        )
+        self.device = add_confirmed_totp_device(self.admin_user)
+
+    def test_admin_login_with_real_totp_code_succeeds(self):
+        client = Client()
+        resp = client.post(
+            '/manage/portal/login/',
+            {
+                'username': self.admin_user.email,
+                'password': DEFAULT_PASSWORD,
+                # No otp_device: this matches the original crash path, which
+                # falls back to django_otp.match_token(user, token).
+                'otp_token': current_totp(self.device),
+            },
+        )
+        # A successful OTP-gated admin login redirects (302) to the admin
+        # index. Before the fix this raised a 500 (binascii.Error) instead.
+        self.assertEqual(resp.status_code, 302)
