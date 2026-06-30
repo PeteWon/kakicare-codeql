@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     'matching.apps.MatchingConfig',
     'sessions.apps.SessionsConfig',  # label overridden to 'befriending_sessions'
     'audit.apps.AuditConfig',
+    'concerns.apps.ConcernsConfig',
 ]
 
 MIDDLEWARE = [
