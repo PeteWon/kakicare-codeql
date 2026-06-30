@@ -7,16 +7,22 @@ Covers Report II §3.5 (access control) and §3.6/C9 (logging):
   - deactivation is a soft-delete, preserving the row
 """
 
+from datetime import timedelta
+
 from django.urls import reverse
 
 from audit.models import AuditLogEntry
 from kakicare.test_utils import (
     KakiCareAPITestCase,
+    create_active_match,
     create_approved_volunteer,
     create_senior,
+    create_session,
     create_staff,
 )
+from matching.models import Match
 from seniors.models import Senior
+from sessions.models import Session
 
 SECRET_ADDRESS = 'Blk 42 Confidential Ave #12-34'
 
@@ -115,3 +121,60 @@ class SeniorDeactivationTests(KakiCareAPITestCase):
             reverse('staff-senior-deactivate', args=[self.senior.pk])
         )
         self.assertEqual(second.status_code, 400)
+
+
+class SeniorDeactivationCascadeTests(KakiCareAPITestCase):
+    """Deactivating a senior ends their matches and cancels upcoming sessions,
+    while leaving in-progress and historical sessions untouched."""
+
+    def setUp(self):
+        super().setUp()
+        self.staff = create_staff(email='cascade@example.com')
+        self.client.force_authenticate(user=self.staff)
+        self.volunteer = create_approved_volunteer(email='vol-cascade@example.com')
+        self.senior = create_senior(self.staff)
+        self.match = create_active_match(self.volunteer, self.senior, self.staff)
+
+    def _deactivate(self):
+        return self.client.post(
+            reverse('staff-senior-deactivate', args=[self.senior.pk])
+        )
+
+    def test_deactivation_ends_active_match(self):
+        self.assertEqual(self._deactivate().status_code, 200)
+        self.match.refresh_from_db()
+        self.assertEqual(self.match.status, Match.Status.ENDED)
+        self.assertIsNotNone(self.match.ended_at)
+
+    def test_deactivation_cancels_upcoming_sessions(self):
+        pending = create_session(
+            self.match, status=Session.Status.PENDING_CONFIRMATION
+        )
+        confirmed = create_session(
+            self.match,
+            status=Session.Status.CONFIRMED,
+            start_offset=timedelta(hours=3),
+        )
+        self._deactivate()
+        pending.refresh_from_db()
+        confirmed.refresh_from_db()
+        self.assertEqual(pending.status, Session.Status.CANCELLED)
+        self.assertEqual(confirmed.status, Session.Status.CANCELLED)
+        self.assertEqual(confirmed.cancel_reason, 'Senior record deactivated.')
+
+    def test_deactivation_leaves_in_progress_session(self):
+        in_progress = create_session(
+            self.match, status=Session.Status.IN_PROGRESS
+        )
+        self._deactivate()
+        in_progress.refresh_from_db()
+        # A visit happening right now must still be checked out.
+        self.assertEqual(in_progress.status, Session.Status.IN_PROGRESS)
+
+    def test_deactivation_leaves_completed_session(self):
+        completed = create_session(
+            self.match, status=Session.Status.COMPLETED
+        )
+        self._deactivate()
+        completed.refresh_from_db()
+        self.assertEqual(completed.status, Session.Status.COMPLETED)
