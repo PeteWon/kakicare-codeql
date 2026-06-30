@@ -1,6 +1,10 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
+
+from .models import GlobalConfiguration
+from audit.services import record_audit 
+
 from .forms import UserAdminChangeForm, UserAdminCreationForm
 from .models import EmailVerificationToken, PasswordResetToken, StaffInviteToken, User
 
@@ -79,3 +83,46 @@ class PasswordResetTokenAdmin(admin.ModelAdmin):
 @admin.register(StaffInviteToken)
 class StaffInviteTokenAdmin(admin.ModelAdmin):
     list_display = ('user', 'created_at', 'expires_at', 'used_at')
+
+
+@admin.register(GlobalConfiguration)
+class GlobalConfigurationAdmin(admin.ModelAdmin):
+    list_display = ('jit_disclosure_window_minutes',)
+
+ 
+    def has_add_permission(self, request):
+        if GlobalConfiguration.objects.exists():
+            return False
+        return super().has_add_permission(request)
+
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def save_model(self, request, obj, form, change):
+        if change:
+ 
+            old_obj = GlobalConfiguration.objects.get(pk=obj.pk)
+            old_val = old_obj.jit_disclosure_window_minutes
+            new_val = obj.jit_disclosure_window_minutes
+
+
+            super().save_model(request, obj, form, change)
+
+    
+            if old_val != new_val:
+                action_text = f"Changed JIT disclosure window from {old_val} mins to {new_val} mins."
+                
+    
+                record_audit(
+                    user=request.user,
+                    action=action_text,
+                    target_type="GlobalConfiguration",
+                    target_id=str(obj.pk),
+                    request_ip=request.META.get('REMOTE_ADDR')
+                )
+                
+                self.message_user(request, f"Configuration updated and change audit-logged.")
+        else:
+
+            super().save_model(request, obj, form, change)

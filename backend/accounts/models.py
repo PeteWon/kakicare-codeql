@@ -11,6 +11,8 @@ from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, Permis
 from django.db import models
 from django.utils import timezone
 from django_otp.plugins.otp_totp.models import TOTPDevice
+from django.core.validators import MinValueValidator
+from django.core.exceptions import ValidationError
 
 from .encryption import decrypt_totp_key, encrypt_totp_key
 
@@ -177,6 +179,38 @@ class MFABackupCode(models.Model):
     def __str__(self):
         return f'MFABackupCode(user={self.user_id}, used={self.used_at is not None})'
 
+class GlobalConfiguration(models.Model):
+    """
+    Stores system-wide settings that are admin-configurable.
+    Enforces singleton pattern (only one configuration row).
+    """
+    jit_disclosure_window_minutes = models.IntegerField(
+        default=120,  # 2 hours default
+        validators=[MinValueValidator(30)],
+        help_text="The JIT disclosure window in minutes. Must be at least 30 minutes."
+    )
+
+    class Meta:
+        verbose_name = "Global Configuration"
+        verbose_name_plural = "Global Configuration"
+
+    def clean(self):
+        # Server-side validation floor check
+        if self.jit_disclosure_window_minutes < 30:
+            raise ValidationError(
+                {"jit_disclosure_window_minutes": "The JIT disclosure window cannot be set to less than 30 minutes."}
+            )
+
+    def save(self, *args, **kwargs):
+        # Enforce singleton pattern
+        if not self.pk and GlobalConfiguration.objects.exists():
+            raise ValidationError("There can only be one GlobalConfiguration instance.")
+        self.full_clean()  # Ensure clean() validation is always run on save
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"Global System Configuration (JIT Window: {self.jit_disclosure_window_minutes} mins)"
+    
 
 class EncryptedTOTPDevice(TOTPDevice):
     """Proxy of TOTPDevice that stores the TOTP secret encrypted at rest.

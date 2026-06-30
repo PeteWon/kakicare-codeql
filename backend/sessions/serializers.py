@@ -13,6 +13,7 @@ from django.utils import timezone
 from rest_framework import serializers
 
 from .models import Session
+from accounts.models import GlobalConfiguration  
 
 
 def _jit_window_open(session: Session) -> bool:
@@ -21,15 +22,27 @@ def _jit_window_open(session: Session) -> bool:
     SR-AUTHZ-03: computed fresh from server clock on every call; not a stored
     flag and cannot be influenced by any client-supplied value.
     """
-    before = getattr(settings, 'SESSION_DISCLOSURE_BEFORE', 2)
+
+    try:
+        config = GlobalConfiguration.objects.first()
+        if config:
+            # Enforce dynamic setting in minutes
+            before_delta = timedelta(minutes=config.jit_disclosure_window_minutes)
+        else:
+         
+            before_delta = timedelta(hours=getattr(settings, 'SESSION_DISCLOSURE_BEFORE', 2))
+    except Exception:
+  
+        before_delta = timedelta(hours=getattr(settings, 'SESSION_DISCLOSURE_BEFORE', 2))
+
     after = getattr(settings, 'SESSION_DISCLOSURE_AFTER', 1)
     now = timezone.now()
+    
     return (
-        session.scheduled_start - timedelta(hours=before)
+        session.scheduled_start - before_delta
         <= now <=
         session.scheduled_end + timedelta(hours=after)
     )
-
 
 def _senior_locality(address: str) -> str:
     s = re.sub(r'^\s*(?:Blk|Block)?\s*\d+\s*', '', address, flags=re.I)
