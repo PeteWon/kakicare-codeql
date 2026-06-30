@@ -49,6 +49,13 @@ jobs:
       - name: Type-check (tsc --noEmit)
         run: npm run lint
 
+      # D2 test-automation evidence. Report-only for now (continue-on-error)
+      # since this suite is brand new — tighten to blocking once it's proven
+      # stable across a few merges, same pattern as the dependency audits above.
+      - name: Run tests
+        continue-on-error: true
+        run: npm run test
+
       - name: Production build
         run: npm run build
 
