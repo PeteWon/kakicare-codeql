@@ -20,7 +20,7 @@ export function MfaResetRequest() {
   const [emailError, setEmailError] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
-  const [requestId, setRequestId] = useState<number | null>(null);
+  const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
@@ -35,8 +35,11 @@ export function MfaResetRequest() {
 
     setSubmitting(true);
     try {
-      const result = await api.requestMfaReset(email, password);
-      setRequestId(result.request_id ?? null);
+      // SECURITY: the backend returns an identical generic response whether or
+      // not the credentials were valid. We must show the same confirmation in
+      // every success case and never key the UI on response contents.
+      await api.requestMfaReset(email, password);
+      setSubmitted(true);
     } catch (err) {
       if (err instanceof ApiError && err.status === 400) {
         setFormError('We could not submit that request. Please check your details and try again.');
@@ -48,7 +51,7 @@ export function MfaResetRequest() {
     }
   }
 
-  if (requestId !== null) {
+  if (submitted) {
     return (
       <section className="mx-auto max-w-md py-8 my-auto">
         <Card className="space-y-4 text-center">
@@ -59,12 +62,6 @@ export function MfaResetRequest() {
             If your email and password were valid, your MFA reset request has been recorded.
             A staff member will review it and contact you after identity verification.
           </p>
-          <div className="rounded-xl bg-cream-100 px-4 py-3 text-left">
-            <p className="text-xs font-semibold uppercase tracking-wide text-primary-500">
-              Request reference
-            </p>
-            <p className="mt-1 font-mono text-lg text-primary-900">#{requestId}</p>
-          </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
             <Link to="/login" className="block sm:flex-1">
               <Button fullWidth>Back to sign in</Button>

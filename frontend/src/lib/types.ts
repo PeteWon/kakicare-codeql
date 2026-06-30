@@ -32,8 +32,9 @@ export type MfaResult =
   | { status: 'invalid' }; // wrong/expired code — generic failure
 
 export interface MfaResetRequestResult {
+  // SECURITY: the backend intentionally returns only a generic message — no
+  // request_id or other success-only field — to avoid a credential oracle.
   detail: string;
-  request_id?: number;
 }
 
 export interface MfaResetResolvePayload {

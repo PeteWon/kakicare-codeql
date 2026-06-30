@@ -1,7 +1,9 @@
 // SECURITY NOTES:
 // - Staff can action MFA reset requests from here.
-// - Admin fallback resets require an out-of-band verification method and
-//   outcome; the backend enforces that rule, and this page exposes the fields.
+// - Every reset requires an out-of-band verification method and outcome
+//   (AC-12 / SR-ADMIN-03); the backend enforces this, and this page captures it.
+// - Non-admin staff may only resolve VOLUNTEER resets; staff/admin targets are
+//   rejected by the backend (Report 1 §10.1.2).
 // - The page is staff-only via ProtectedRoute, but the backend remains
 //   authoritative for role checks and request resolution.
 
@@ -33,18 +35,20 @@ export function MfaResetRequests() {
     const requestIdErr = !requestId || Number.isNaN(requestIdNum) || requestIdNum <= 0
       ? 'Enter a valid request ID.'
       : null;
-    const methodErr = verificationMethod.trim() ? null : null;
-    const outcomeErr = verificationOutcome.trim() ? null : null;
+    // AC-12 / SR-ADMIN-03: out-of-band verification is required for every reset,
+    // so both fields are mandatory here (the backend also enforces this).
+    const methodErr = verificationMethod.trim() ? null : 'Record the verification method used.';
+    const outcomeErr = verificationOutcome.trim() ? null : 'Record the verification outcome.';
     setRequestIdError(requestIdErr);
     setMethodError(methodErr);
     setOutcomeError(outcomeErr);
-    if (requestIdErr) return;
+    if (requestIdErr || methodErr || outcomeErr) return;
 
     setSubmitting(true);
     try {
       const response = await api.resolveMfaReset(requestIdNum, {
-        verification_method: verificationMethod.trim() || undefined,
-        verification_outcome: verificationOutcome.trim() || undefined,
+        verification_method: verificationMethod.trim(),
+        verification_outcome: verificationOutcome.trim(),
       });
       setResultMessage(response.detail);
       setRequestId('');
@@ -74,7 +78,7 @@ export function MfaResetRequests() {
       <div>
         <h1 className="font-serif text-2xl font-semibold text-primary-900">MFA resets</h1>
         <p className="mt-1 text-sm text-primary-500">
-          Resolve lost-authenticator requests. Enter out-of-band verification details when you are handling an admin fallback case.
+          Resolve lost-authenticator requests. Out-of-band identity verification is required for every reset — record the method and outcome before resolving.
         </p>
       </div>
 
@@ -113,7 +117,7 @@ export function MfaResetRequests() {
             name="verificationMethod"
             value={verificationMethod}
             error={methodError}
-            hint="Required for admin fallback resets; e.g. phone callback, in-person ID check."
+            hint="Required; e.g. phone callback, in-person ID check."
             onChange={(e) => {
               setVerificationMethod(e.target.value);
               setMethodError(null);
@@ -125,7 +129,7 @@ export function MfaResetRequests() {
             name="verificationOutcome"
             value={verificationOutcome}
             error={outcomeError}
-            hint="Required for admin fallback resets; e.g. identity matched, failed verification."
+            hint="Required; e.g. identity matched, failed verification."
             onChange={(e) => {
               setVerificationOutcome(e.target.value);
               setOutcomeError(null);

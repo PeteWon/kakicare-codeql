@@ -167,6 +167,8 @@ REST_FRAMEWORK = {
         'register': '5/hour',
         # SR-AUTH-04: 5 resend-verification requests per hour per source IP.
         'resend_verification': '5/hour',
+        # SR-AUTH-04: 5 MFA-reset requests per 15 minutes per source IP.
+        'mfa_reset_request': '5/15min',
         # 30 senior-list requests per minute per source IP (AC-02/AC-06).
         'senior_list': '30/min',
         # AC-04: 5 check-in code verifications per 15 minutes per source IP.

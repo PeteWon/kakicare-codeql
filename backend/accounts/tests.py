@@ -241,9 +241,27 @@ class MFAResetFlowTests(KakiCareAPITestCase):
             AuditLogEntry.objects.filter(action='auth.mfa.reset.requested', target_id=str(request_obj.pk)).exists()
         )
 
-    def test_staff_can_resolve_non_admin_reset_and_it_is_audited(self):
+    def test_request_response_is_generic_and_leaks_no_request_id(self):
+        # Valid and invalid credentials must return an identical body so the
+        # endpoint cannot be used as a credential/account enumeration oracle.
+        valid = self.client.post(
+            self.request_url,
+            {'email': 'lost-mfa@example.com', 'password': DEFAULT_PASSWORD},
+        )
+        invalid = self.client.post(
+            self.request_url,
+            {'email': 'lost-mfa@example.com', 'password': 'wrong-password-123'},
+        )
+        self.assertEqual(valid.status_code, 200)
+        self.assertEqual(invalid.status_code, 200)
+        self.assertNotIn('request_id', valid.data)
+        self.assertEqual(valid.data, invalid.data)
+        # Only the valid request creates a row.
+        self.assertEqual(MFAResetRequest.objects.filter(requester=self.volunteer).count(), 1)
+
+    def test_staff_can_resolve_volunteer_reset_and_it_is_audited(self):
         device = add_confirmed_totp_device(self.volunteer)
-        backup_codes = _generate_backup_codes(self.volunteer)
+        _generate_backup_codes(self.volunteer)
         request_obj = MFAResetRequest.objects.create(
             requester=self.volunteer,
             target_user=self.volunteer,
@@ -253,17 +271,54 @@ class MFAResetFlowTests(KakiCareAPITestCase):
         self.client.force_authenticate(user=self.staff)
         resp = self.client.post(
             reverse(self.resolve_url_template, args=[request_obj.pk]),
-            {},
+            {
+                'verification_method': 'phone callback to registered number',
+                'verification_outcome': 'identity matched',
+            },
         )
         self.assertEqual(resp.status_code, 200)
 
         request_obj.refresh_from_db()
         self.assertEqual(request_obj.status, MFAResetRequest.Status.RESOLVED)
+        self.assertEqual(request_obj.verification_method, 'phone callback to registered number')
         self.assertFalse(device.__class__.objects.filter(user=self.volunteer).exists())
         self.assertEqual(self.volunteer.mfa_backup_codes.filter(used_at__isnull=True).count(), 0)
         self.assertTrue(
             AuditLogEntry.objects.filter(action='auth.mfa.reset.completed', target_id=str(request_obj.pk)).exists()
         )
+
+    def test_staff_resolve_requires_verification_details(self):
+        request_obj = MFAResetRequest.objects.create(
+            requester=self.volunteer,
+            target_user=self.volunteer,
+            reason='lost_authenticator',
+        )
+        self.client.force_authenticate(user=self.staff)
+        resp = self.client.post(reverse(self.resolve_url_template, args=[request_obj.pk]), {})
+        self.assertEqual(resp.status_code, 400)
+        request_obj.refresh_from_db()
+        self.assertEqual(request_obj.status, MFAResetRequest.Status.PENDING)
+
+    def test_staff_cannot_reset_another_staff_mfa(self):
+        # §10.1.2 / FR-S-08: non-admin staff may reset volunteers only; a peer
+        # staff target requires an admin actor.
+        target_staff = create_staff(email='peer-staff@example.com')
+        device = add_confirmed_totp_device(target_staff)
+        request_obj = MFAResetRequest.objects.create(
+            requester=target_staff,
+            target_user=target_staff,
+            reason='lost_authenticator',
+        )
+        self.client.force_authenticate(user=self.staff)
+        resp = self.client.post(
+            reverse(self.resolve_url_template, args=[request_obj.pk]),
+            {'verification_method': 'phone callback', 'verification_outcome': 'identity matched'},
+        )
+        self.assertEqual(resp.status_code, 403)
+        request_obj.refresh_from_db()
+        self.assertEqual(request_obj.status, MFAResetRequest.Status.PENDING)
+        # The target's MFA device must remain intact.
+        self.assertTrue(device.__class__.objects.filter(user=target_staff).exists())
 
     def test_admin_fallback_requires_out_of_band_verification_details(self):
         request_obj = MFAResetRequest.objects.create(
