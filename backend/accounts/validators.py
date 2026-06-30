@@ -35,7 +35,12 @@ class HIBPPasswordValidator:
     """
 
     def validate(self, password, user=None):
-        sha1 = hashlib.sha1(password.encode('utf-8')).hexdigest().upper()
+        # SHA-1 here is mandated by the HIBP range API, which indexes breached
+        # passwords by SHA-1 prefix — it is NOT used to secure or store anything.
+        # usedforsecurity=False documents that intent and satisfies SAST (B324).
+        sha1 = hashlib.sha1(
+            password.encode('utf-8'), usedforsecurity=False
+        ).hexdigest().upper()
         prefix, suffix = sha1[:5], sha1[5:]
 
         try:
@@ -43,7 +48,10 @@ class HIBPPasswordValidator:
                 _HIBP_API_URL.format(prefix=prefix),
                 headers={'User-Agent': _USER_AGENT},
             )
-            with urllib.request.urlopen(req, timeout=_HIBP_TIMEOUT) as response:
+            # nosec B310: the URL scheme is a fixed https:// constant
+            # (_HIBP_API_URL) — only the 5-char hash prefix is interpolated, so
+            # the file:/custom-scheme risk B310 guards against cannot occur here.
+            with urllib.request.urlopen(req, timeout=_HIBP_TIMEOUT) as response:  # nosec B310
                 body = response.read().decode('utf-8')
         except Exception:
             # Fail open: network errors must not block registration or password
