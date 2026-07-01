@@ -11,6 +11,8 @@ const NAV_ITEMS = [
   { to: '/staff/seniors', label: 'Seniors' },
   { to: '/staff/matches', label: 'Matches' },
   { to: '/staff/sessions', label: 'Sessions' },
+  { to: '/staff/concerns', label: 'Concerns' },
+  { to: '/staff/mfa-resets', label: 'MFA resets' },
   { to: '/staff/audit-log', label: 'Audit log' },
   { to: '/staff/account', label: 'Account' },
 ];

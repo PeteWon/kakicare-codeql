@@ -31,6 +31,17 @@ export type MfaResult =
   | { status: 'enrolled' } // new TOTP device confirmed (post-login enrolment)
   | { status: 'invalid' }; // wrong/expired code — generic failure
 
+export interface MfaResetRequestResult {
+  // SECURITY: the backend intentionally returns only a generic message — no
+  // request_id or other success-only field — to avoid a credential oracle.
+  detail: string;
+}
+
+export interface MfaResetResolvePayload {
+  verification_method?: string;
+  verification_outcome?: string;
+}
+
 export interface MfaSetupResult {
   config_url: string;  // otpauth:// URI for authenticator apps
   secret_key: string;  // base32 secret for manual entry
@@ -149,8 +160,6 @@ export interface Session {
   durationMinutes: number;
   /** Volunteer's notes about how the senior is doing. */
   notes: string;
-  /** Optional flag the volunteer can raise for staff attention. */
-  concernRaised: boolean;
   createdAt: ISODateString;
 }
 
@@ -444,6 +453,21 @@ export interface ConfirmSessionResult extends StaffSession {
 /** Possible follow-up outcomes for a missed session. */
 export type FollowUpOutcome = 'senior_well' | 'rescheduled' | 'escalated';
 
+export type ConcernStatus = 'open' | 'resolved';
+
+export interface WelfareConcern {
+  id: string;
+  raised_by: { id: number; full_name: string };
+  session: { id: number } | null;
+  target_senior: { id: number; full_name: string };
+  description: string;
+  status: ConcernStatus;
+  resolved_by: { id: number; full_name: string } | null;
+  resolution_note: string;
+  created_at: string;
+  resolved_at: string | null;
+}
+
 /** Append-only audit record. Security-relevant actions are logged server-side. */
 export interface AuditLogEntry {
   id: string;
@@ -467,6 +491,7 @@ export interface StaffAuditLogEntry {
   action: string;
   target_type: string;
   target_id: string;
+  metadata: Record<string, unknown> | null;
   request_ip: string | null;
   timestamp: ISODateString;
 }

@@ -8,6 +8,7 @@
 //   Route protection here is UX only; the backend enforces real authorisation
 //   and returns 404 (not 403) for sessions that don't belong to this volunteer.
 
+import type { FormEvent } from 'react';
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, ApiError } from '@/lib/api';
@@ -59,6 +60,8 @@ function formatTime(iso: string): string {
 // Session card
 // ---------------------------------------------------------------------------
 
+const CONCERN_STATUSES = new Set<SessionStatus>(['completed', 'missed']);
+
 function SessionCard({ session }: { session: VolunteerSession }) {
   // SR-AUTHZ-03: display only what the backend sent — never attempt to show
   // address, phone, or next-of-kin from the SessionSenior type in this view.
@@ -73,6 +76,35 @@ function SessionCard({ session }: { session: VolunteerSession }) {
     label: session.status,
     className: 'bg-cream-200 text-primary-700',
   };
+
+  const [concernOpen, setConcernOpen] = useState(false);
+  const [concernText, setConcernText] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [concernError, setConcernError] = useState<string | null>(null);
+
+  async function handleConcernSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!concernText.trim()) return;
+    setConcernError(null);
+    setSubmitting(true);
+    try {
+      await api.submitWelfareConcern({
+        target_senior: session.senior.id,
+        description: concernText.trim(),
+        session: session.id,
+      });
+      setSubmitted(true);
+    } catch (err) {
+      const message =
+        err instanceof ApiError && err.status === 400
+          ? 'Your concern could not be submitted. Please try again.'
+          : 'Something went wrong. Please try again.';
+      setConcernError(message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   return (
     <Card>
@@ -107,14 +139,69 @@ function SessionCard({ session }: { session: VolunteerSession }) {
         </span>
       </div>
 
-      <div className="mt-3">
+      <div className="mt-3 flex flex-wrap items-center gap-3">
         <Link
           to={`/volunteer/sessions/${session.id}`}
           className="text-sm font-medium text-primary-600 hover:text-primary-800"
         >
           View details →
         </Link>
+
+        {CONCERN_STATUSES.has(session.status) && !submitted && !concernOpen && (
+          <button
+            onClick={() => setConcernOpen(true)}
+            className="text-sm font-medium text-red-600 hover:text-red-800"
+          >
+            Report a concern
+          </button>
+        )}
       </div>
+
+      {CONCERN_STATUSES.has(session.status) && (
+        <>
+          {submitted && (
+            <p className="mt-3 text-sm font-medium text-green-700">
+              Your concern has been submitted. Staff will follow up.
+            </p>
+          )}
+
+          {concernOpen && !submitted && (
+            <form onSubmit={handleConcernSubmit} className="mt-3 space-y-2" noValidate>
+              <textarea
+                value={concernText}
+                onChange={(e) => setConcernText(e.target.value)}
+                maxLength={5000}
+                rows={3}
+                placeholder="Describe what you noticed - staff will follow up"
+                disabled={submitting}
+                className="block w-full resize-none rounded-xl border border-cream-300 bg-white px-3 py-2.5 text-sm text-primary-950 placeholder:text-primary-300 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+              {concernError && (
+                <p className="text-xs text-red-600">{concernError}</p>
+              )}
+              <div className="flex gap-2">
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="sm"
+                  disabled={submitting || !concernText.trim()}
+                >
+                  {submitting ? 'Submitting…' : 'Submit concern'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={submitting}
+                  onClick={() => { setConcernOpen(false); setConcernText(''); setConcernError(null); }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          )}
+        </>
+      )}
     </Card>
   );
 }

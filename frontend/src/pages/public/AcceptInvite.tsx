@@ -63,9 +63,19 @@ export function AcceptInvite() {
       setPageState('success');
     } catch (err) {
       if (err instanceof ApiError && err.status === 400) {
-        // SR-AUTH-06: show the same error for expired, already-used, and invalid
-        // tokens — distinguishing them would leak token state.
-        setPageState('invalid_token');
+        const body = err.body as Record<string, unknown> | undefined;
+        const pwErrors = body?.new_password as string[] | undefined;
+        if (pwErrors && pwErrors.length > 0) {
+          // The token is valid — the chosen password failed the server-side
+          // policy (length, common-password, HIBP breach, or similarity).
+          // Surface it on the form so the user can pick a stronger password; a
+          // rejected password does NOT consume the invite token, so retrying works.
+          setPasswordError(pwErrors[0]);
+        } else {
+          // No field errors → the token itself is invalid/expired/used.
+          // SR-AUTH-06: a single generic message; do not distinguish token states.
+          setPageState('invalid_token');
+        }
       } else {
         setFormError('Something went wrong. Please try again.');
       }

@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     'matching.apps.MatchingConfig',
     'sessions.apps.SessionsConfig',  # label overridden to 'befriending_sessions'
     'audit.apps.AuditConfig',
+    'concerns.apps.ConcernsConfig',
 ]
 
 MIDDLEWARE = [
@@ -165,6 +166,10 @@ REST_FRAMEWORK = {
         'password_reset': '5/hour',
         # SR-AUTH-04: 5 registration attempts per hour per source IP.
         'register': '5/hour',
+        # SR-AUTH-04: 5 resend-verification requests per hour per source IP.
+        'resend_verification': '5/hour',
+        # SR-AUTH-04: 5 MFA-reset requests per 15 minutes per source IP.
+        'mfa_reset_request': '5/15min',
         # 30 senior-list requests per minute per source IP (AC-02/AC-06).
         'senior_list': '30/min',
         # AC-04: 5 check-in code verifications per 15 minutes per source IP.
@@ -232,7 +237,10 @@ SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
 # points to a private directory; files are only ever returned via an
 # authenticated, authorised endpoint (to be built later). There is intentionally
 # no public MEDIA_URL static mapping for these files.
-MEDIA_ROOT = env('MEDIA_ROOT', default=str(BASE_DIR.parent / 'private_media'))
+# Default is BASE_DIR/private_media so it matches the container layout
+# (/app/private_media, created in the Dockerfile and mounted as a volume in
+# docker-compose.prod.yml). Production still sets MEDIA_ROOT explicitly via env.
+MEDIA_ROOT = env('MEDIA_ROOT', default=str(BASE_DIR / 'private_media'))
 
 
 # --- Internationalization ----------------------------------------------------

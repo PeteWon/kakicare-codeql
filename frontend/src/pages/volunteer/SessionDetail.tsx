@@ -317,14 +317,41 @@ function CheckOutForm({
   const [note, setNote] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [concernChecked, setConcernChecked] = useState(false);
+  const [concernText, setConcernText] = useState('');
+  // Holds the checkout result when checkout succeeded but the concern call
+  // failed, so the user can dismiss and advance to the completed-session view.
+  const [pendingSuccess, setPendingSuccess] = useState<VolunteerSession | null>(null);
+  const [concernError, setConcernError] = useState<string | null>(null);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setConcernError(null);
     setSubmitting(true);
     try {
       const updated = await api.checkOutSession(session.id, note.trim() || undefined);
-      onSuccess(updated);
+
+      if (concernChecked && concernText.trim()) {
+        try {
+          await api.submitWelfareConcern({
+            target_senior: session.senior.id,
+            description: concernText.trim(),
+            session: session.id,
+          });
+          onSuccess(updated);
+        } catch {
+          // Checkout succeeded; concern submission failed. Let the volunteer
+          // know before advancing the view so the message is not lost.
+          setPendingSuccess(updated);
+          setConcernError(
+            'Checkout completed, but your concern could not be submitted. ' +
+            "Please try reporting it again from this session's page.",
+          );
+        }
+      } else {
+        onSuccess(updated);
+      }
     } catch (err) {
       const message =
         err instanceof ApiError && err.status === 400
@@ -334,6 +361,28 @@ function CheckOutForm({
     } finally {
       setSubmitting(false);
     }
+  }
+
+  // Checkout done but concern failed: show the error and let the user dismiss.
+  if (concernError && pendingSuccess) {
+    return (
+      <Card>
+        <CardTitle>Check out</CardTitle>
+        <div className="mt-3 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {concernError}
+        </div>
+        <div className="mt-4">
+          <Button
+            variant="primary"
+            fullWidth
+            size="lg"
+            onClick={() => onSuccess(pendingSuccess)}
+          >
+            OK
+          </Button>
+        </div>
+      </Card>
+    );
   }
 
   return (
@@ -361,6 +410,36 @@ function CheckOutForm({
           <p className="mt-1 text-right text-xs text-primary-400">{note.length}/500</p>
         </div>
 
+        <div className="rounded-xl border border-cream-300 bg-cream-50 px-4 py-3 space-y-3">
+          <label className="flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={concernChecked}
+              onChange={(e) => {
+                setConcernChecked(e.target.checked);
+                if (!e.target.checked) setConcernText('');
+              }}
+              disabled={submitting}
+              className="mt-0.5 h-4 w-4 rounded border-cream-400 text-primary-600 focus:ring-primary-500"
+            />
+            <span className="text-sm text-primary-800">
+              I have a welfare concern about this visit
+            </span>
+          </label>
+
+          {concernChecked && (
+            <textarea
+              value={concernText}
+              onChange={(e) => setConcernText(e.target.value)}
+              maxLength={5000}
+              rows={3}
+              placeholder="Describe what you noticed - staff will follow up"
+              disabled={submitting}
+              className="block w-full resize-none rounded-xl border border-cream-300 bg-white px-3 py-2.5 text-sm text-primary-950 placeholder:text-primary-300 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+          )}
+        </div>
+
         {error && (
           <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
         )}
@@ -375,6 +454,91 @@ function CheckOutForm({
           {submitting ? 'Checking out…' : 'Complete session'}
         </Button>
       </form>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Missed-session concern card
+// ---------------------------------------------------------------------------
+
+function MissedConcernCard({ session }: { session: VolunteerSession }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!text.trim()) return;
+    setError(null);
+    setSubmitting(true);
+    try {
+      await api.submitWelfareConcern({
+        target_senior: session.senior.id,
+        description: text.trim(),
+        session: session.id,
+      });
+      setSubmitted(true);
+    } catch (err) {
+      const message =
+        err instanceof ApiError && err.status === 400
+          ? 'Your concern could not be submitted. Please try again.'
+          : 'Something went wrong. Please try again.';
+      setError(message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Card className="border-red-200 bg-red-50">
+      <p className="text-sm font-medium text-red-800">Session marked as missed</p>
+      <p className="mt-1 text-sm text-red-700">
+        This session was not completed. KakiCare staff will follow up with the senior.
+      </p>
+
+      {submitted ? (
+        <p className="mt-3 text-sm font-medium text-green-700">
+          Your concern has been submitted. Staff will follow up.
+        </p>
+      ) : open ? (
+        <form onSubmit={handleSubmit} className="mt-3 space-y-3" noValidate>
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            maxLength={5000}
+            rows={3}
+            placeholder="Describe what you noticed - staff will follow up"
+            disabled={submitting}
+            className="block w-full resize-none rounded-xl border border-red-200 bg-white px-3 py-2.5 text-sm text-primary-950 placeholder:text-primary-300 focus:outline-none focus:ring-2 focus:ring-red-400"
+          />
+          {error && (
+            <p className="text-xs text-red-700">{error}</p>
+          )}
+          <div className="flex gap-2">
+            <Button type="submit" variant="primary" size="sm" disabled={submitting || !text.trim()}>
+              {submitting ? 'Submitting…' : 'Submit concern'}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              disabled={submitting}
+              onClick={() => { setOpen(false); setText(''); setError(null); }}
+            >
+              Cancel
+            </Button>
+          </div>
+        </form>
+      ) : (
+        <div className="mt-3">
+          <Button variant="secondary" size="sm" onClick={() => setOpen(true)}>
+            Report a concern
+          </Button>
+        </div>
+      )}
     </Card>
   );
 }
@@ -547,13 +711,7 @@ export function SessionDetail() {
 
       {/* Missed session */}
       {session.status === 'missed' && (
-        <Card className="border-red-200 bg-red-50">
-          <p className="text-sm font-medium text-red-800">Session marked as missed</p>
-          <p className="mt-1 text-sm text-red-700">
-            This session was not completed. KakiCare staff will follow up with the senior.
-            Please contact us if you have any concerns.
-          </p>
-        </Card>
+        <MissedConcernCard session={session} />
       )}
 
       {/* Cancelled session */}

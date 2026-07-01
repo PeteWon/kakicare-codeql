@@ -108,6 +108,13 @@ export function ForgotPassword() {
           Sign in
         </Link>
       </p>
+
+      <p className="mt-3 text-center text-sm text-primary-500">
+        Need an MFA reset instead?{' '}
+        <Link to="/mfa-reset" className="font-medium text-primary-700 hover:text-primary-900">
+          Request a reset
+        </Link>
+      </p>
     </section>
   );
 }

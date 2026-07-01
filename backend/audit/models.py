@@ -34,6 +34,10 @@ class AuditLogEntry(models.Model):
     target_type = models.CharField(max_length=100, blank=True)
     target_id = models.CharField(max_length=64, blank=True)
 
+    # Optional structured context for actions that need a few extra machine-
+    # readable facts (for example MFA reset verification method/outcome).
+    metadata = models.JSONField(default=dict, blank=True)
+
     request_ip = models.GenericIPAddressField(null=True, blank=True)
 
     timestamp = models.DateTimeField(auto_now_add=True, db_index=True)
