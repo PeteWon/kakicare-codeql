@@ -7,7 +7,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('accounts', '0004_encryptedtotpdevice_widen_totp_key'),
+        ('accounts', '0005_merge_0004_encryptedtotpdevice_widen_totp_key_0004_mfaresetrequest'),
     ]
 
     operations = [
