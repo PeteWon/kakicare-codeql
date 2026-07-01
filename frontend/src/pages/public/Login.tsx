@@ -313,6 +313,7 @@ export function Login() {
 
               <form className="space-y-4" onSubmit={handleMfaSetup} noValidate>
                 <TextField
+                  id="setupCode"
                   label="Authentication code"
                   name="setupCode"
                   inputMode="numeric"
@@ -387,6 +388,7 @@ export function Login() {
 
             {backupMode ? (
               <TextField
+                id="code"
                 label="Backup code"
                 name="backupCode"
                 autoComplete="off"
@@ -402,6 +404,7 @@ export function Login() {
               />
             ) : (
               <TextField
+                id="code"
                 label="Authentication code"
                 name="otp"
                 inputMode="numeric"
@@ -470,6 +473,7 @@ export function Login() {
           ) : null}
 
           <TextField
+            id="email"
             label="Email"
             type="email"
             name="email"
@@ -481,6 +485,7 @@ export function Login() {
           />
 
           <TextField
+            id="password"
             label="Password"
             type="password"
             name="password"
