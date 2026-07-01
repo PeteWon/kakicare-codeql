@@ -27,7 +27,7 @@ export function MultiSelect<T extends string>({
   }
 
   return (
-    <fieldset className="w-full">
+    <fieldset className="w-full" data-error={error ? 'true' : undefined}>
       <legend className="text-sm font-medium text-primary-800">{label}</legend>
       <div className="mt-2 flex flex-wrap gap-2">
         {options.map((option) => {

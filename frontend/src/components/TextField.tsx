@@ -70,7 +70,7 @@ export function TextField({
   );
 
   return (
-    <div className="w-full">
+    <div className="w-full" data-error={error ? 'true' : undefined}>
       <label htmlFor={fieldId} className="block text-sm font-medium text-primary-800">
         {label}
       </label>
