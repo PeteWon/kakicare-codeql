@@ -111,7 +111,7 @@ export function FileUpload({
   const shownError = fileError ?? error ?? null;
 
   return (
-    <div className="w-full">
+    <div className="w-full" data-error={shownError ? 'true' : undefined}>
       <label htmlFor={inputId} className="block text-sm font-medium text-primary-800">
         {label}
       </label>
