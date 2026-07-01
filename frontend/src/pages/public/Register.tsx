@@ -135,6 +135,7 @@ export function Register() {
           ) : null}
 
           <TextField
+            id="fullName"
             label="Full name"
             name="fullName"
             autoComplete="name"
@@ -146,6 +147,7 @@ export function Register() {
           />
 
           <TextField
+            id="email"
             label="Email"
             type="email"
             name="email"
@@ -157,6 +159,7 @@ export function Register() {
           />
 
           <TextField
+            id="password"
             label="Password"
             type="password"
             name="password"
@@ -169,6 +172,7 @@ export function Register() {
           />
 
           <TextField
+            id="confirmPassword"
             label="Confirm password"
             type="password"
             name="confirmPassword"
