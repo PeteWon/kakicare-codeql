@@ -109,6 +109,10 @@ export const router = createBrowserRouter([
           { path: 'mfa-resets', element: <MfaResetRequests /> },
           { path: 'audit-log', element: <AuditLog /> },
           { path: 'account', element: <AccountSettings /> },
+          // Nested catch-all: keeps unrecognised /staff/* paths inside StaffLayout
+          // so the authenticated navbar/session context isn't lost. Without this,
+          // react-router falls through to the top-level '*' route under PublicLayout.
+          { path: '*', element: <NotFound /> },
         ],
       },
     ],
