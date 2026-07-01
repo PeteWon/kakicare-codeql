@@ -318,6 +318,7 @@ export function Login() {
                   inputMode="numeric"
                   autoComplete="one-time-code"
                   autoFocus
+                  required
                   maxLength={8}
                   placeholder="123456"
                   value={setupCode}
@@ -391,6 +392,7 @@ export function Login() {
                 name="backupCode"
                 autoComplete="off"
                 autoFocus
+                required
                 maxLength={10}
                 placeholder="e.g. a1b2c3d4e5"
                 value={code}
@@ -407,6 +409,7 @@ export function Login() {
                 inputMode="numeric"
                 autoComplete="one-time-code"
                 autoFocus
+                required
                 maxLength={8}
                 placeholder="123456"
                 value={code}
@@ -475,6 +478,7 @@ export function Login() {
             name="email"
             autoComplete="email"
             autoFocus
+            required
             value={email}
             error={emailError}
             onChange={(e) => setEmail(e.target.value)}
@@ -486,6 +490,7 @@ export function Login() {
             name="password"
             autoComplete="current-password"
             showToggle
+            required
             value={password}
             error={passwordError}
             onChange={(e) => setPassword(e.target.value)}
