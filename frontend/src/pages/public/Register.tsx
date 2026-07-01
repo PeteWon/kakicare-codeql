@@ -139,6 +139,7 @@ export function Register() {
             name="fullName"
             autoComplete="name"
             autoFocus
+            required
             value={fullName}
             error={fullNameError}
             onChange={(e) => setFullName(e.target.value)}
@@ -149,6 +150,7 @@ export function Register() {
             type="email"
             name="email"
             autoComplete="email"
+            required
             value={email}
             error={emailError}
             onChange={(e) => setEmail(e.target.value)}
@@ -159,6 +161,7 @@ export function Register() {
             type="password"
             name="password"
             autoComplete="new-password"
+            required
             value={password}
             error={passwordError}
             hint="At least 12 characters."
@@ -170,6 +173,7 @@ export function Register() {
             type="password"
             name="confirmPassword"
             autoComplete="new-password"
+            required
             value={confirmPassword}
             error={confirmPasswordError}
             onChange={(e) => setConfirmPassword(e.target.value)}
