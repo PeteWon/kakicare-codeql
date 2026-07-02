@@ -313,11 +313,13 @@ export function Login() {
 
               <form className="space-y-4" onSubmit={handleMfaSetup} noValidate>
                 <TextField
+                  id="setupCode"
                   label="Authentication code"
                   name="setupCode"
                   inputMode="numeric"
                   autoComplete="one-time-code"
                   autoFocus
+                  required
                   maxLength={8}
                   placeholder="123456"
                   value={setupCode}
@@ -387,10 +389,12 @@ export function Login() {
 
             {backupMode ? (
               <TextField
+                id="code"
                 label="Backup code"
                 name="backupCode"
                 autoComplete="off"
                 autoFocus
+                required
                 maxLength={10}
                 placeholder="e.g. a1b2c3d4e5"
                 value={code}
@@ -402,11 +406,13 @@ export function Login() {
               />
             ) : (
               <TextField
+                id="code"
                 label="Authentication code"
                 name="otp"
                 inputMode="numeric"
                 autoComplete="one-time-code"
                 autoFocus
+                required
                 maxLength={8}
                 placeholder="123456"
                 value={code}
@@ -470,22 +476,26 @@ export function Login() {
           ) : null}
 
           <TextField
+            id="email"
             label="Email"
             type="email"
             name="email"
             autoComplete="email"
             autoFocus
+            required
             value={email}
             error={emailError}
             onChange={(e) => setEmail(e.target.value)}
           />
 
           <TextField
+            id="password"
             label="Password"
             type="password"
             name="password"
             autoComplete="current-password"
             showToggle
+            required
             value={password}
             error={passwordError}
             onChange={(e) => setPassword(e.target.value)}

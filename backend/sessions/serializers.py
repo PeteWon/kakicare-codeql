@@ -12,6 +12,8 @@ from django.conf import settings
 from django.utils import timezone
 from rest_framework import serializers
 
+from accounts.models import GlobalConfiguration
+
 from .models import Session
 
 
@@ -20,12 +22,27 @@ def _jit_window_open(session: Session) -> bool:
 
     SR-AUTHZ-03: computed fresh from server clock on every call; not a stored
     flag and cannot be influenced by any client-supplied value.
+
+    FR-A-03/SR-ADMIN-02: the "before" window is admin-configurable via the
+    GlobalConfiguration singleton (in minutes). If it is unset or unreadable,
+    fall back to the SESSION_DISCLOSURE_BEFORE setting (hours) so disclosure
+    logic degrades safely rather than erroring on the read path.
     """
-    before = getattr(settings, 'SESSION_DISCLOSURE_BEFORE', 2)
+    default_before = timedelta(hours=getattr(settings, 'SESSION_DISCLOSURE_BEFORE', 2))
+    try:
+        config = GlobalConfiguration.objects.first()
+        before_delta = (
+            timedelta(minutes=config.jit_disclosure_window_minutes)
+            if config else default_before
+        )
+    except Exception:
+        # Defensive: never let a config read failure break senior disclosure.
+        before_delta = default_before
+
     after = getattr(settings, 'SESSION_DISCLOSURE_AFTER', 1)
     now = timezone.now()
     return (
-        session.scheduled_start - timedelta(hours=before)
+        session.scheduled_start - before_delta
         <= now <=
         session.scheduled_end + timedelta(hours=after)
     )

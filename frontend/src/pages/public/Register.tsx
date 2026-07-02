@@ -135,30 +135,36 @@ export function Register() {
           ) : null}
 
           <TextField
+            id="fullName"
             label="Full name"
             name="fullName"
             autoComplete="name"
             autoFocus
+            required
             value={fullName}
             error={fullNameError}
             onChange={(e) => setFullName(e.target.value)}
           />
 
           <TextField
+            id="email"
             label="Email"
             type="email"
             name="email"
             autoComplete="email"
+            required
             value={email}
             error={emailError}
             onChange={(e) => setEmail(e.target.value)}
           />
 
           <TextField
+            id="password"
             label="Password"
             type="password"
             name="password"
             autoComplete="new-password"
+            required
             value={password}
             error={passwordError}
             hint="At least 12 characters."
@@ -166,10 +172,12 @@ export function Register() {
           />
 
           <TextField
+            id="confirmPassword"
             label="Confirm password"
             type="password"
             name="confirmPassword"
             autoComplete="new-password"
+            required
             value={confirmPassword}
             error={confirmPasswordError}
             onChange={(e) => setConfirmPassword(e.target.value)}
