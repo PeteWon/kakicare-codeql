@@ -955,7 +955,7 @@ class StaffVolunteerDeactivationRequestResolveView(APIView):
             try:
                 request_obj = (
                     VolunteerDeactivationRequest.objects
-                    .select_related('requester', 'reviewed_by')
+                    .select_related('requester')
                     .select_for_update()
                     .get(pk=pk)
                 )
