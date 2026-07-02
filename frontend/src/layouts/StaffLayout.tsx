@@ -12,6 +12,7 @@ const NAV_ITEMS = [
   { to: '/staff/matches', label: 'Matches' },
   { to: '/staff/sessions', label: 'Sessions' },
   { to: '/staff/concerns', label: 'Concerns' },
+  { to: '/staff/deactivation-requests', label: 'Deactivations' },
   { to: '/staff/mfa-resets', label: 'MFA resets' },
   { to: '/staff/audit-log', label: 'Audit log' },
   { to: '/staff/account', label: 'Account' },
