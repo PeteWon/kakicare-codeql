@@ -4,4 +4,5 @@ export { Card, CardTitle } from './Card';
 export { MultiSelect } from './MultiSelect';
 export { FileUpload } from './FileUpload';
 export { ErrorBoundary } from './ErrorBoundary';
+export { SkipLink } from './SkipLink';
 export { ProtectedRoute } from './ProtectedRoute';
