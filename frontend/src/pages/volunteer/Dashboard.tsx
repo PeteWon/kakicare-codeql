@@ -7,9 +7,8 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '@/lib/api';
 import { usePageTitle } from '@/lib/usePageTitle';
-import { Button, Card, CardTitle } from '@/components';
+import { ApplicationStatusBanner, Card, CardTitle } from '@/components';
 import type {
-  ApplicationStatus,
   User,
   VolunteerMatch,
   VolunteerProfileData,
@@ -49,58 +48,6 @@ function Spinner() {
         aria-label="Loading…"
         className="h-10 w-10 animate-spin rounded-full border-4 border-primary-100 border-t-primary-500"
       />
-    </div>
-  );
-}
-
-const statusConfig: Record<
-  ApplicationStatus,
-  {
-    title: string;
-    body: string;
-    cta?: { label: string; to: string };
-    bgClass: string;
-  } | null
-> = {
-  approved: null,
-  incomplete: {
-    title: 'Complete your profile to get started',
-    body: "We need a few more details before your application can be reviewed by our team.",
-    cta: { label: 'Complete profile', to: '/volunteer/profile' },
-    bgClass: 'bg-primary-50 border-primary-200',
-  },
-  pending_review: {
-    title: 'Your application is under review',
-    body: "Our team is reviewing your profile and documents. We'll be in touch as soon as possible.",
-    bgClass: 'bg-amber-50 border-amber-200',
-  },
-  rejected: {
-    title: 'Application not approved',
-    body: 'Unfortunately your application was not approved at this time. Please contact us if you have any questions.',
-    bgClass: 'bg-red-50 border-red-200',
-  },
-  changes_requested: {
-    title: 'Changes requested',
-    body: 'Our team has reviewed your application and requested some changes. Please update your profile.',
-    cta: { label: 'Update profile', to: '/volunteer/profile' },
-    bgClass: 'bg-amber-50 border-amber-200',
-  },
-};
-
-function ApplicationStatusBanner({ status }: { status: ApplicationStatus }) {
-  const cfg = statusConfig[status];
-  if (!cfg) return null;
-  return (
-    <div className={`rounded-2xl border p-5 ${cfg.bgClass}`}>
-      <p className="font-semibold text-primary-900">{cfg.title}</p>
-      <p className="mt-1 text-sm text-primary-700">{cfg.body}</p>
-      {cfg.cta && (
-        <div className="mt-3">
-          <Link to={cfg.cta.to}>
-            <Button variant="primary" size="sm">{cfg.cta.label}</Button>
-          </Link>
-        </div>
-      )}
     </div>
   );
 }

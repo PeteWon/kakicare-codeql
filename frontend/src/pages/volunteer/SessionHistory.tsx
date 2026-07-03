@@ -13,8 +13,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, ApiError } from '@/lib/api';
 import { usePageTitle } from '@/lib/usePageTitle';
-import { Button, Card, CardTitle } from '@/components';
-import type { SessionStatus, VolunteerSession } from '@/lib/types';
+import { ApplicationStatusBanner, Button, Card, CardTitle } from '@/components';
+import type { ApplicationStatus, SessionStatus, VolunteerSession } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
 // Config
@@ -214,11 +214,13 @@ export function SessionHistory() {
   usePageTitle('Session history');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [appStatus, setAppStatus] = useState<ApplicationStatus | null>(null);
   const [sessions, setSessions] = useState<VolunteerSession[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setAppStatus(null);
     try {
       const data = await api.getVolunteerSessions();
       setSessions(data.results);
@@ -226,7 +228,19 @@ export function SessionHistory() {
       if (err instanceof ApiError && err.status === 401) {
         setError('Your session has expired. Please log in again.');
       } else if (err instanceof ApiError && err.status === 403) {
-        setError('Sessions are available once your volunteer profile has been approved by staff.');
+        // Not a real error — the volunteer just isn't approved yet. Show the
+        // contextual application-status banner instead of a misleading
+        // "Try again". Fetch the current status to know which message applies.
+        try {
+          const profile = await api.getVolunteerProfile();
+          if (profile.application_status === 'approved') {
+            setError('Could not load your sessions. Please try again.');
+          } else {
+            setAppStatus(profile.application_status);
+          }
+        } catch {
+          setError('Could not load your sessions. Please try again.');
+        }
       } else {
         setError('Could not load your sessions. Please try again.');
       }
@@ -268,6 +282,11 @@ export function SessionHistory() {
         </div>
       )}
 
+      {/* ---- Not approved yet — contextual status banner ---- */}
+      {!loading && appStatus && (
+        <ApplicationStatusBanner status={appStatus} />
+      )}
+
       {/* ---- Error ---- */}
       {!loading && error && (
         <Card>
@@ -281,7 +300,7 @@ export function SessionHistory() {
       )}
 
       {/* ---- Results ---- */}
-      {!loading && !error && (
+      {!loading && !error && !appStatus && (
         <>
           {/* Upcoming */}
           <section aria-labelledby="upcoming-heading">

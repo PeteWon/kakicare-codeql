@@ -199,6 +199,56 @@ class MFAResetRequest(models.Model):
         )
 
 
+class VolunteerDeactivationRequest(models.Model):
+    """Volunteer-initiated account deactivation request reviewed by staff.
+
+    The request itself does not deactivate the account. A staff approval action
+    performs the lifecycle cascade so account invalidation, session cancellation,
+    and audit logging happen together.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Pending'
+        APPROVED = 'approved', 'Approved'
+        REJECTED = 'rejected', 'Rejected'
+
+    requester = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name='deactivation_requests'
+    )
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.PENDING
+    )
+    reason = models.TextField(blank=True)
+
+    reviewed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='reviewed_deactivation_requests',
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    staff_note = models.TextField(blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['requester'],
+                condition=models.Q(status='pending'),
+                name='unique_pending_volunteer_deactivation_request',
+            ),
+        ]
+
+    def __str__(self):
+        return (
+            f'VolunteerDeactivationRequest('
+            f'requester={self.requester_id}, status={self.status})'
+        )
+
+
 class MFABackupCode(models.Model):
     """Single-use recovery code for TOTP MFA.
 

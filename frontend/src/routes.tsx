@@ -47,6 +47,7 @@ import { ProposeMatch } from './pages/staff/ProposeMatch';
 import { Sessions } from './pages/staff/Sessions';
 import { Concerns } from './pages/staff/Concerns';
 import { AuditLog } from './pages/staff/AuditLog';
+import { DeactivationRequests } from './pages/staff/DeactivationRequests';
 import { MfaResetRequests } from './pages/staff/MfaResetRequests';
 import { AccountSettings } from './pages/shared/AccountSettings';
 
@@ -108,6 +109,7 @@ export const router = createBrowserRouter([
           { path: 'matches/new', element: <ProposeMatch /> },
           { path: 'sessions', element: <Sessions /> },
           { path: 'concerns', element: <Concerns /> },
+          { path: 'deactivation-requests', element: <DeactivationRequests /> },
           { path: 'mfa-resets', element: <MfaResetRequests /> },
           { path: 'audit-log', element: <AuditLog /> },
           { path: 'account', element: <AccountSettings /> },
