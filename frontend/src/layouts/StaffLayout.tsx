@@ -4,6 +4,7 @@
 
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { api } from '@/lib/api';
+import { SkipLink } from '@/components';
 
 const NAV_ITEMS = [
   { to: '/staff', label: 'Dashboard', end: true },
@@ -43,6 +44,7 @@ export function StaffLayout() {
 
   return (
     <div className="flex min-h-screen bg-cream">
+      <SkipLink />
       {/* ---- Sidebar (md+) ---- */}
       <aside className="hidden w-60 shrink-0 flex-col border-r border-cream-300 bg-white md:flex">
         <div className="px-5 py-5 font-serif text-xl font-semibold text-primary-700">
@@ -96,7 +98,7 @@ export function StaffLayout() {
           </div>
         </header>
 
-        <main className="flex-1 px-6 py-6">
+        <main id="main-content" className="flex-1 px-6 py-6">
           <Outlet />
         </main>
       </div>
