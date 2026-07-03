@@ -54,6 +54,31 @@ class VerifyEmailSerializer(serializers.Serializer):
     token = serializers.CharField(min_length=1)
 
 
+class ContactSerializer(serializers.Serializer):
+    """Input for POST /api/auth/contact (public landing-page contact form)."""
+
+    name = serializers.CharField(min_length=1, max_length=150)
+    email = serializers.EmailField()
+    message = serializers.CharField(min_length=10, max_length=5000)
+
+    def validate_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError('Name must not be blank.')
+        return value
+
+    def validate_email(self, value):
+        return value.strip().lower()
+
+    def validate_message(self, value):
+        value = value.strip()
+        if len(value) < 10:
+            raise serializers.ValidationError(
+                'Message must be at least 10 characters after trimming whitespace.'
+            )
+        return value
+
+
 class ResendVerificationSerializer(serializers.Serializer):
     """Input for POST /api/auth/resend-verification.
 
