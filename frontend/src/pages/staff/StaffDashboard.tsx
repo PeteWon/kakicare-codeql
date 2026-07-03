@@ -75,11 +75,12 @@ function StatCard({
   urgent?: boolean;
 }) {
   return (
-    <div
-      className={`rounded-2xl border p-5 shadow-sm ${
+    <Link
+      to={linkTo}
+      className={`group block rounded-2xl border p-5 shadow-sm transition-all hover:shadow-md ${
         urgent
-          ? 'border-red-200 bg-red-50'
-          : 'border-cream-300 bg-white'
+          ? 'border-red-200 bg-red-50 hover:border-red-300'
+          : 'border-cream-300 bg-white hover:border-primary-300'
       }`}
     >
       <p className={`text-sm font-medium ${urgent ? 'text-red-600' : 'text-primary-500'}`}>
@@ -88,15 +89,14 @@ function StatCard({
       <p className={`mt-1 text-4xl font-semibold tabular-nums ${urgent ? 'text-red-700' : 'text-primary-900'}`}>
         {value}
       </p>
-      <Link
-        to={linkTo}
-        className={`mt-3 block text-sm font-medium hover:underline ${
-          urgent ? 'text-red-700' : 'text-primary-600 hover:text-primary-900'
+      <span
+        className={`mt-3 block text-sm font-medium group-hover:underline ${
+          urgent ? 'text-red-700' : 'text-primary-600 group-hover:text-primary-900'
         }`}
       >
         {linkLabel} →
-      </Link>
-    </div>
+      </span>
+    </Link>
   );
 }
 
