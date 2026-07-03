@@ -2,7 +2,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
-from .models import User
+from .models import User, VolunteerDeactivationRequest
 
 
 class RegisterSerializer(serializers.Serializer):
@@ -145,6 +145,44 @@ class MFAResetResolveSerializer(serializers.Serializer):
     verification_method = serializers.CharField(required=False, allow_blank=False, max_length=255)
     verification_outcome = serializers.CharField(required=False, allow_blank=False, max_length=255)
     reason = serializers.CharField(required=False, allow_blank=True, max_length=255)
+
+
+class VolunteerDeactivationRequestSerializer(serializers.Serializer):
+    """Input for POST /api/auth/deactivation-request."""
+
+    reason = serializers.CharField(required=False, allow_blank=True, max_length=1000)
+
+
+class VolunteerDeactivationRequestReadSerializer(serializers.ModelSerializer):
+    """Staff/volunteer-safe representation of an account deactivation request."""
+
+    requester_email = serializers.EmailField(source='requester.email', read_only=True)
+    requester_full_name = serializers.CharField(source='requester.full_name', read_only=True)
+    reviewed_by_email = serializers.EmailField(source='reviewed_by.email', read_only=True)
+
+    class Meta:
+        model = VolunteerDeactivationRequest
+        fields = [
+            'id',
+            'requester',
+            'requester_email',
+            'requester_full_name',
+            'status',
+            'reason',
+            'reviewed_by',
+            'reviewed_by_email',
+            'reviewed_at',
+            'staff_note',
+            'created_at',
+        ]
+        read_only_fields = fields
+
+
+class VolunteerDeactivationResolveSerializer(serializers.Serializer):
+    """Input for POST /api/staff/deactivation-requests/<id>/resolve/."""
+
+    decision = serializers.ChoiceField(choices=['approve', 'reject'])
+    staff_note = serializers.CharField(required=False, allow_blank=True, max_length=1000)
 
 
 class AcceptInviteSerializer(serializers.Serializer):

@@ -16,6 +16,8 @@
 import type {
   ConcernStatus,
   ConfirmSessionResult,
+  DeactivationDecision,
+  DeactivationRequestStatus,
   FollowUpOutcome,
   LoginResult,
   MfaResult,
@@ -38,6 +40,7 @@ import type {
   User,
   UserRole,
   VerifyEmailResult,
+  VolunteerDeactivationRequest,
   VolunteerMatch,
   VolunteerProfileData,
   VolunteerSession,
@@ -225,6 +228,29 @@ export const api = {
     });
   },
 
+  async getDeactivationRequests(
+    status: DeactivationRequestStatus = 'pending',
+  ): Promise<Paginated<VolunteerDeactivationRequest>> {
+    const qs = new URLSearchParams({ status });
+    return apiFetch<Paginated<VolunteerDeactivationRequest>>(
+      `/api/staff/deactivation-requests/?${qs}`,
+    );
+  },
+
+  async resolveDeactivationRequest(
+    requestId: number,
+    decision: DeactivationDecision,
+    staffNote: string,
+  ): Promise<VolunteerDeactivationRequest> {
+    return apiFetch<VolunteerDeactivationRequest>(
+      `/api/staff/deactivation-requests/${requestId}/resolve/`,
+      {
+        method: 'POST',
+        body: { decision, staff_note: staffNote },
+      },
+    );
+  },
+
   async resendVerification(email: string): Promise<void> {
     // Re-sends the email-verification link to an unverified account. Backend
     // always returns 200 with a generic message (anti-enumeration) — the caller
@@ -253,6 +279,13 @@ export const api = {
     await apiFetch('/api/auth/change-password', {
       method: 'POST',
       body: { current_password: currentPassword, new_password: newPassword },
+    });
+  },
+
+  async requestAccountDeactivation(reason: string): Promise<VolunteerDeactivationRequest> {
+    return apiFetch<VolunteerDeactivationRequest>('/api/auth/deactivation-request', {
+      method: 'POST',
+      body: { reason },
     });
   },
 

@@ -42,6 +42,24 @@ export interface MfaResetResolvePayload {
   verification_outcome?: string;
 }
 
+export type DeactivationRequestStatus = 'pending' | 'approved' | 'rejected';
+
+export type DeactivationDecision = 'approve' | 'reject';
+
+export interface VolunteerDeactivationRequest {
+  id: number;
+  requester: number;
+  requester_email: string;
+  requester_full_name: string;
+  status: DeactivationRequestStatus;
+  reason: string;
+  reviewed_by: number | null;
+  reviewed_by_email: string | null;
+  reviewed_at: ISODateString | null;
+  staff_note: string;
+  created_at: ISODateString;
+}
+
 export interface MfaSetupResult {
   config_url: string;  // otpauth:// URI for authenticator apps
   secret_key: string;  // base32 secret for manual entry

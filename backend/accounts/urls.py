@@ -15,6 +15,7 @@ from .views import (
     PasswordResetRequestView,
     RegisterView,
     ResendVerificationView,
+    VolunteerDeactivationRequestView,
     VerifyEmailView,
 )
 
@@ -27,6 +28,7 @@ urlpatterns = [
     path('logout', LogoutView.as_view(), name='auth-logout'),
     path('me', MeView.as_view(), name='auth-me'),
     path('change-password', ChangePasswordView.as_view(), name='auth-change-password'),
+    path('deactivation-request', VolunteerDeactivationRequestView.as_view(), name='auth-deactivation-request'),
     path('mfa/setup', MFASetupView.as_view(), name='auth-mfa-setup'),
     path('mfa/verify', MFAVerifyView.as_view(), name='auth-mfa-verify'),
     path('mfa-reset/request', MFAResetRequestView.as_view(), name='auth-mfa-reset-request'),

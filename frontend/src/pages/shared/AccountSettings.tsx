@@ -120,6 +120,104 @@ function ChangePasswordSection() {
 }
 
 // ---------------------------------------------------------------------------
+// Account deactivation section
+// ---------------------------------------------------------------------------
+
+function DeactivationRequestSection() {
+  const [reason, setReason] = useState('');
+  const [reasonError, setReasonError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+    setFormError(null);
+    setSuccess(false);
+
+    if (reason.length > 1000) {
+      setReasonError('Reason must be 1000 characters or fewer.');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await api.requestAccountDeactivation(reason.trim());
+      setReason('');
+      setSuccess(true);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 400) {
+        setFormError((err.body as { detail?: string })?.detail ?? 'A request is already pending review.');
+      } else if (err instanceof ApiError && err.status === 403) {
+        setFormError('Only volunteer accounts can request deactivation here.');
+      } else {
+        setFormError('Something went wrong. Please try again.');
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <section aria-labelledby="deactivation-heading">
+      <CardTitle id="deactivation-heading" className="mb-3">
+        Account deactivation
+      </CardTitle>
+      <Card className="space-y-4">
+        {success && (
+          <p role="status" className="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800">
+            Your request has been sent for staff review.
+          </p>
+        )}
+        {formError && (
+          <p role="alert" className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700">
+            {formError}
+          </p>
+        )}
+
+        <form className="space-y-4" onSubmit={handleSubmit} noValidate>
+          <div>
+            <label htmlFor="deactivation-reason" className="block text-sm font-medium text-primary-800">
+              Reason
+            </label>
+            <textarea
+              id="deactivation-reason"
+              name="deactivation-reason"
+              rows={4}
+              maxLength={1000}
+              value={reason}
+              onChange={(e) => {
+                setReason(e.target.value);
+                setReasonError(null);
+                setFormError(null);
+                setSuccess(false);
+              }}
+              className="mt-1 block w-full rounded-xl border border-cream-300 bg-white px-3 py-2 text-sm text-primary-900 shadow-sm outline-none transition focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
+            />
+            <div className="mt-1 flex items-center justify-between gap-3 text-xs">
+              {reasonError ? (
+                <p className="text-red-600">{reasonError}</p>
+              ) : (
+                <p className="text-primary-500">Optional. Staff will review before any account change.</p>
+              )}
+              <span className="shrink-0 text-primary-400">{reason.length}/1000</span>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            Approval deactivates your account and cancels active sessions.
+          </div>
+
+          <Button type="submit" variant="secondary" disabled={submitting}>
+            {submitting ? 'Sending...' : 'Request deactivation'}
+          </Button>
+        </form>
+      </Card>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // MFA section
 // ---------------------------------------------------------------------------
 
@@ -372,6 +470,7 @@ export function AccountSettings() {
       <h1 className="font-serif text-2xl font-semibold text-primary-900">Account settings</h1>
       <ChangePasswordSection />
       {role !== null && <MfaSection role={role} />}
+      {role === 'volunteer' && <DeactivationRequestSection />}
     </div>
   );
 }
