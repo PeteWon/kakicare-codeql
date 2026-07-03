@@ -9,8 +9,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, ApiError } from '@/lib/api';
 import { usePageTitle } from '@/lib/usePageTitle';
-import { Button, Card, CardTitle } from '@/components';
-import type { VolunteerMatch } from '@/lib/types';
+import { ApplicationStatusBanner, Button, Card, CardTitle } from '@/components';
+import type { ApplicationStatus, VolunteerMatch } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -255,19 +255,32 @@ export function Matches() {
   usePageTitle('My matches');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [appStatus, setAppStatus] = useState<ApplicationStatus | null>(null);
   const [matches, setMatches] = useState<VolunteerMatch[]>([]);
 
   const loadMatches = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setAppStatus(null);
     try {
       const data = await api.getVolunteerMatches();
       setMatches(data.results);
     } catch (err) {
       if (err instanceof ApiError && err.status === 403) {
-        setError(
-          'Your application must be approved before you can view matches.',
-        );
+        // Not a real error — the volunteer just isn't approved yet. Surface the
+        // contextual application-status banner (Complete profile / Under review)
+        // instead of a misleading "Try again". Fetch the current status to know
+        // which message applies.
+        try {
+          const profile = await api.getVolunteerProfile();
+          if (profile.application_status === 'approved') {
+            setError('Could not load matches. Please try again.');
+          } else {
+            setAppStatus(profile.application_status);
+          }
+        } catch {
+          setError('Could not load matches. Please try again.');
+        }
       } else {
         setError('Could not load matches. Please try again.');
       }
@@ -306,6 +319,10 @@ export function Matches() {
         </div>
       )}
 
+      {!loading && appStatus && (
+        <ApplicationStatusBanner status={appStatus} />
+      )}
+
       {!loading && error && (
         <Card>
           <p className="text-sm text-red-600">{error}</p>
@@ -317,7 +334,7 @@ export function Matches() {
         </Card>
       )}
 
-      {!loading && !error && (
+      {!loading && !error && !appStatus && (
         <>
           {/* ---- Proposed matches — need a response ---- */}
           {needsResponse.length > 0 && (
