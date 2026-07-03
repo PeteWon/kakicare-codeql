@@ -174,6 +174,8 @@ REST_FRAMEWORK = {
         'senior_list': '30/min',
         # AC-04: 5 check-in code verifications per 15 minutes per source IP.
         'checkin_verify': '5/15min',
+        # 5 public contact-form submissions per hour per source IP.
+        'contact': '5/hour',
     },
 }
 
@@ -269,6 +271,8 @@ EMAIL_BACKEND = env(
     default='django.core.mail.backends.console.EmailBackend',
 )
 DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='noreply@kakicare.example')
+# Inbox that public contact-form submissions (POST /api/auth/contact) are sent to.
+CONTACT_EMAIL = env('CONTACT_EMAIL', default='kakicare18@gmail.com')
 EMAIL_HOST = env('EMAIL_HOST', default='')
 EMAIL_PORT = env.int('EMAIL_PORT', default=587)
 EMAIL_USE_TLS = env.bool('EMAIL_USE_TLS', default=True)

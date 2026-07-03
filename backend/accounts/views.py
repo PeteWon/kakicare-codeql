@@ -10,7 +10,7 @@ from django.contrib import auth
 from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.core.mail import send_mail
+from django.core.mail import EmailMessage, send_mail
 from django.db import transaction
 from django.middleware.csrf import get_token
 from django.utils import timezone
@@ -34,6 +34,7 @@ from .models import (
 from .serializers import (
     AcceptInviteSerializer,
     ChangePasswordSerializer,
+    ContactSerializer,
     LoginSerializer,
     MFAResetRequestSerializer,
     MFAResetResolveSerializer,
@@ -162,6 +163,22 @@ class MFAResetRequestRateThrottle(SimpleRateThrottle):
 
     def parse_rate(self, rate):
         return (5, 15 * 60)
+
+    def get_cache_key(self, request, view):
+        return self.cache_format % {'scope': self.scope, 'ident': self.get_ident(request)}
+
+
+class ContactRateThrottle(SimpleRateThrottle):
+    """5 contact-form submissions per hour, keyed by source IP.
+
+    Public and unauthenticated, and each submission sends an outbound email —
+    without a throttle it is an open relay for spamming the contact inbox.
+    """
+
+    scope = 'contact'
+
+    def parse_rate(self, rate):
+        return (5, 3600)
 
     def get_cache_key(self, request, view):
         return self.cache_format % {'scope': self.scope, 'ident': self.get_ident(request)}
@@ -1123,6 +1140,47 @@ class VerifyEmailView(APIView):
 
         return Response(
             {'detail': 'Email verified successfully.'},
+            status=status.HTTP_200_OK,
+        )
+
+
+class ContactView(APIView):
+    """POST /api/auth/contact
+
+    Public landing-page contact form. Sends the message straight to the
+    KakiCare contact inbox, with the visitor's address set as Reply-To so
+    staff can reply directly from their email client.
+    """
+
+    permission_classes = [AllowAny]
+    throttle_classes = [ContactRateThrottle]
+
+    def post(self, request):
+        serializer = ContactSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        name = serializer.validated_data['name']
+        email = serializer.validated_data['email']
+        message = serializer.validated_data['message']
+
+        try:
+            EmailMessage(
+                subject=f'KakiCare contact form message from {name}',
+                body=f'From: {name} <{email}>\n\n{message}',
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                to=[settings.CONTACT_EMAIL],
+                reply_to=[email],
+            ).send(fail_silently=False)
+        except Exception:
+            logger.exception('Failed to send contact-form email from %s', email)
+            return Response(
+                {'detail': 'Could not send your message. Please try again later.'},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        return Response(
+            {'detail': 'Your message has been sent.'},
             status=status.HTTP_200_OK,
         )
 

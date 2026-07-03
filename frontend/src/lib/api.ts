@@ -242,6 +242,13 @@ export const api = {
     });
   },
 
+  async sendContactMessage(name: string, email: string, message: string): Promise<void> {
+    await apiFetch('/api/auth/contact', {
+      method: 'POST',
+      body: { name, email, message },
+    });
+  },
+
   async acceptInvite(token: string, newPassword: string): Promise<void> {
     await apiFetch('/api/auth/accept-invite', {
       method: 'POST',

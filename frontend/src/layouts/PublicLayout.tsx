@@ -28,8 +28,17 @@ export function PublicLayout() {
       </main>
 
       <footer className="border-t border-cream-300">
-        <div className="mx-auto max-w-5xl px-4 py-6 text-sm text-primary-400">
-          KakiCare — Connecting Hearts, Supporting Seniors.
+        <div className="mx-auto flex max-w-5xl flex-col gap-2 px-4 py-6 text-sm text-primary-400 sm:flex-row sm:items-center sm:justify-between">
+          <span>KakiCare — Connecting Hearts, Supporting Seniors.</span>
+          <span>
+            <Link to="/contact" className="hover:text-primary-700">
+              Contact us
+            </Link>{' '}
+            ·{' '}
+            <a href="mailto:kakicare18@gmail.com" className="hover:text-primary-700">
+              kakicare18@gmail.com
+            </a>
+          </span>
         </div>
       </footer>
     </div>

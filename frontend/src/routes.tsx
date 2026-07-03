@@ -27,6 +27,7 @@ import { ResendVerification } from './pages/public/ResendVerification';
 import { ResetPassword } from './pages/public/ResetPassword';
 import { MfaResetRequest } from './pages/public/MfaResetRequest';
 import { AcceptInvite } from './pages/public/AcceptInvite';
+import { Contact } from './pages/public/Contact';
 import { NotFound } from './pages/public/NotFound';
 
 import { Dashboard } from './pages/volunteer/Dashboard';
@@ -62,6 +63,7 @@ export const router = createBrowserRouter([
       { path: '/mfa-reset', element: <MfaResetRequest /> },
       { path: '/reset-password', element: <ResetPassword /> },
       { path: '/accept-invite', element: <AcceptInvite /> },
+      { path: '/contact', element: <Contact /> },
       { path: '/dashboard', element: <SmartRedirect /> },
       { path: '*', element: <NotFound /> },
     ],
