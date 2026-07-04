@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     'matching.apps.MatchingConfig',
     'sessions.apps.SessionsConfig',  # label overridden to 'befriending_sessions'
     'audit.apps.AuditConfig',
+    'concerns.apps.ConcernsConfig',
 ]
 
 MIDDLEWARE = [
@@ -163,10 +164,18 @@ REST_FRAMEWORK = {
         'mfa_verify': '10/15min',
         # 5 password-reset requests per hour per source IP.
         'password_reset': '5/hour',
+        # SR-AUTH-04: 5 registration attempts per hour per source IP.
+        'register': '5/hour',
+        # SR-AUTH-04: 5 resend-verification requests per hour per source IP.
+        'resend_verification': '5/hour',
+        # SR-AUTH-04: 5 MFA-reset requests per 15 minutes per source IP.
+        'mfa_reset_request': '5/15min',
         # 30 senior-list requests per minute per source IP (AC-02/AC-06).
         'senior_list': '30/min',
         # AC-04: 5 check-in code verifications per 15 minutes per source IP.
         'checkin_verify': '5/15min',
+        # 5 public contact-form submissions per hour per source IP.
+        'contact': '5/hour',
     },
 }
 
@@ -230,7 +239,10 @@ SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
 # points to a private directory; files are only ever returned via an
 # authenticated, authorised endpoint (to be built later). There is intentionally
 # no public MEDIA_URL static mapping for these files.
-MEDIA_ROOT = env('MEDIA_ROOT', default=str(BASE_DIR.parent / 'private_media'))
+# Default is BASE_DIR/private_media so it matches the container layout
+# (/app/private_media, created in the Dockerfile and mounted as a volume in
+# docker-compose.prod.yml). Production still sets MEDIA_ROOT explicitly via env.
+MEDIA_ROOT = env('MEDIA_ROOT', default=str(BASE_DIR / 'private_media'))
 
 
 # --- Internationalization ----------------------------------------------------
@@ -259,6 +271,8 @@ EMAIL_BACKEND = env(
     default='django.core.mail.backends.console.EmailBackend',
 )
 DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', default='noreply@kakicare.example')
+# Inbox that public contact-form submissions (POST /api/auth/contact) are sent to.
+CONTACT_EMAIL = env('CONTACT_EMAIL', default='kakicare18@gmail.com')
 EMAIL_HOST = env('EMAIL_HOST', default='')
 EMAIL_PORT = env.int('EMAIL_PORT', default=587)
 EMAIL_USE_TLS = env.bool('EMAIL_USE_TLS', default=True)
@@ -269,6 +283,11 @@ EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD', default='')
 # --- TOTP MFA ----------------------------------------------------------------
 # Issuer name shown in authenticator apps (e.g. "KakiCare:user@example.com").
 OTP_TOTP_ISSUER = 'KakiCare'
+
+# SR-DATA: TOTP device secrets are encrypted at rest with Fernet (§10.1.2,
+# threat #27). REQUIRED — generate a key with:
+#   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+TOTP_ENCRYPTION_KEY = env('TOTP_ENCRYPTION_KEY')
 
 
 # --- Frontend ----------------------------------------------------------------

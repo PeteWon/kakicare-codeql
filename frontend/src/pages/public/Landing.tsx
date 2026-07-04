@@ -1,7 +1,9 @@
 import { Link } from 'react-router-dom';
 import { Button } from '@/components';
+import { usePageTitle } from '@/lib/usePageTitle';
 
 export function Landing() {
+  usePageTitle('Connecting Hearts, Supporting Seniors');
   return (
     <div className="space-y-14 py-8">
       {/* ---- Hero ---- */}
@@ -39,8 +41,11 @@ export function Landing() {
         </p>
         <p className="rounded-2xl border border-cream-300 bg-cream-50 px-4 py-3 text-sm text-primary-600">
           Seniors are enrolled by KakiCare staff — they do not self-register. If
-          you know a senior who could benefit from the programme, please contact
-          us directly.
+          you know a senior who could benefit from the programme, please{' '}
+          <Link to="/contact" className="font-semibold text-primary-700 underline hover:text-primary-900">
+            contact us directly
+          </Link>
+          .
         </p>
       </section>
 

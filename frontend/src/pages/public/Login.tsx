@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import QRCode from 'react-qr-code';
 import { Button, Card, TextField } from '@/components';
 import { api, ApiError } from '@/lib/api';
 import { fetchCurrentUser, homePathForRole } from '@/lib/auth';
 import type { MfaSetupResult, UserRole } from '@/lib/types';
 import { email as emailRule, required, validate } from '@/lib/validation';
+import { usePageTitle } from '@/lib/usePageTitle';
 
 // SECURITY NOTES (KakiCare login):
 //
@@ -33,6 +35,7 @@ const GENERIC_MFA_ERROR = 'Invalid code. Please try again.';
 type Step = 'credentials' | 'mfa' | 'mfa_setup';
 
 export function Login() {
+  usePageTitle('Sign in');
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   // Only redirect to relative paths — prevents open-redirect attacks.
@@ -230,14 +233,14 @@ export function Login() {
 
   if (step === 'mfa_setup') {
     return (
-      <section className="mx-auto max-w-md py-8">
+      <section className="mx-auto max-w-md py-8 my-auto">
         <h1 className="text-3xl font-semibold text-primary-900">
           Set up two-factor authentication
         </h1>
         <p className="mt-2 text-primary-600">
-          Your account requires MFA. Add the key below to your authenticator app
-          (Google Authenticator, Aegis, etc.), save your backup codes, then enter
-          the 6-digit code to complete sign-in.
+          Your account requires MFA. Scan the QR code with your authenticator app
+          (Microsoft Authenticator, Google Authenticator, etc.), save your backup
+          codes, then enter the 6-digit code to complete sign-in.
         </p>
 
         <Card className="mt-6 space-y-5">
@@ -260,33 +263,25 @@ export function Login() {
             </div>
           ) : (
             <>
-              <div className="space-y-3">
+              <div className="space-y-4">
+                <div>
+                  <p className="text-sm font-medium text-primary-800">Scan with your authenticator app</p>
+                  <div className="mt-2 flex justify-center rounded-xl bg-white p-4 shadow-sm ring-1 ring-cream-200">
+                    <QRCode value={setupData.config_url} size={180} />
+                  </div>
+                </div>
+
                 <div>
                   <p className="text-sm font-medium text-primary-800">
-                    Secret key{' '}
+                    Can't scan?{' '}
                     <span className="font-normal text-primary-500">
-                      (enter manually in your authenticator app)
+                      Enter this key manually in your authenticator app.
                     </span>
                   </p>
                   <p className="mt-1 break-all rounded-xl bg-cream-100 px-3 py-2 font-mono text-sm text-primary-900 select-all">
                     {setupData.secret_key}
                   </p>
                   <p className="mt-1 text-xs text-primary-500">Issuer: KakiCare</p>
-                </div>
-
-                <div>
-                  <p className="text-sm font-medium text-primary-800">
-                    Provisioning URI{' '}
-                    <span className="font-normal text-primary-500">
-                      (for apps that support URI / QR import, e.g. Aegis)
-                    </span>
-                  </p>
-                  {/* No QR library per project stack constraint — show URI as
-                      copyable text. Apps like Aegis accept otpauth:// URIs via
-                      manual import. */}
-                  <p className="mt-1 break-all rounded-xl bg-cream-100 px-3 py-2 font-mono text-xs text-primary-700 select-all">
-                    {setupData.config_url}
-                  </p>
                 </div>
               </div>
 
@@ -318,11 +313,13 @@ export function Login() {
 
               <form className="space-y-4" onSubmit={handleMfaSetup} noValidate>
                 <TextField
+                  id="setupCode"
                   label="Authentication code"
                   name="setupCode"
                   inputMode="numeric"
                   autoComplete="one-time-code"
                   autoFocus
+                  required
                   maxLength={8}
                   placeholder="123456"
                   value={setupCode}
@@ -369,7 +366,7 @@ export function Login() {
   if (step === 'mfa') {
     void mfaRole; // role captured for potential future use (e.g. showing volunteer vs staff label)
     return (
-      <section className="mx-auto max-w-md py-8">
+      <section className="mx-auto max-w-md py-8 my-auto">
         <h1 className="text-3xl font-semibold text-primary-900">
           Two-factor authentication
         </h1>
@@ -392,10 +389,12 @@ export function Login() {
 
             {backupMode ? (
               <TextField
+                id="code"
                 label="Backup code"
                 name="backupCode"
                 autoComplete="off"
                 autoFocus
+                required
                 maxLength={10}
                 placeholder="e.g. a1b2c3d4e5"
                 value={code}
@@ -407,11 +406,13 @@ export function Login() {
               />
             ) : (
               <TextField
+                id="code"
                 label="Authentication code"
                 name="otp"
                 inputMode="numeric"
                 autoComplete="one-time-code"
                 autoFocus
+                required
                 maxLength={8}
                 placeholder="123456"
                 value={code}
@@ -475,21 +476,26 @@ export function Login() {
           ) : null}
 
           <TextField
+            id="email"
             label="Email"
             type="email"
             name="email"
             autoComplete="email"
             autoFocus
+            required
             value={email}
             error={emailError}
             onChange={(e) => setEmail(e.target.value)}
           />
 
           <TextField
+            id="password"
             label="Password"
             type="password"
             name="password"
             autoComplete="current-password"
+            showToggle
+            required
             value={password}
             error={passwordError}
             onChange={(e) => setPassword(e.target.value)}
@@ -503,6 +509,13 @@ export function Login() {
               Forgot password?
             </Link>
           </div>
+
+          <p className="text-center text-sm text-primary-500">
+            Lost your authenticator?{' '}
+            <Link to="/mfa-reset" className="font-medium text-primary-700 hover:text-primary-900">
+              Request an MFA reset
+            </Link>
+          </p>
 
           <Button type="submit" fullWidth disabled={submitting}>
             {submitting ? 'Signing in…' : 'Sign in'}

@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '@/lib/api';
+import { usePageTitle } from '@/lib/usePageTitle';
 import type { ApplicationStatus, Paginated, StaffApplicationSummary } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
@@ -47,6 +48,7 @@ const STATUS_LABEL: Record<ApplicationStatus, string> = {
 // ---------------------------------------------------------------------------
 
 export function Applications() {
+  usePageTitle('Applications');
   const [searchParams, setSearchParams] = useSearchParams();
   const statusFilter = (searchParams.get('status') ?? 'pending_review') as ApplicationStatus;
   const currentPage = Number(searchParams.get('page') ?? '1');

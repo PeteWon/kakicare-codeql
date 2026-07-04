@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, ApiError } from '@/lib/api';
+import { usePageTitle } from '@/lib/usePageTitle';
 
 // ---------------------------------------------------------------------------
 // Searchable select — a text filter above a native <select> listbox.
@@ -43,7 +44,9 @@ function SearchableSelect({
   const filtered = options.filter((o) =>
     o.label.toLowerCase().includes(search.toLowerCase()),
   );
-  const visibleRows = Math.min(Math.max(filtered.length, 1), 7);
+  // size >= 2 keeps <select> in listbox mode. size={1} renders a combobox
+  // dropdown instead of a visible list, which is the wrong UX here.
+  const visibleRows = Math.min(Math.max(filtered.length, 2), 7);
 
   // When an item is confirmed, collapse the picker.
   function pick(optId: number) {
@@ -85,10 +88,14 @@ function SearchableSelect({
         id={id}
         size={visibleRows}
         value={value ?? ''}
-        onChange={(e) => { if (e.target.value) pick(Number(e.target.value)); }}
+        onChange={(e) => { if (e.target.value !== '') pick(Number(e.target.value)); }}
         disabled={disabled}
         className="block w-full rounded-xl border border-cream-300 bg-white px-3 py-1 text-sm text-primary-900 focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-60"
       >
+        {/* Anchors the controlled value="" so browsers never implicitly mark
+            the first real option as selected. Without this, clicking the sole
+            option in a single-item listbox fires no change event. */}
+        <option value="" disabled hidden />
         {filtered.length === 0 ? (
           <option value="" disabled>No results</option>
         ) : (
@@ -107,6 +114,7 @@ function SearchableSelect({
 // ---------------------------------------------------------------------------
 
 export function ProposeMatch() {
+  usePageTitle('Propose a match');
   const navigate = useNavigate();
 
   // Dropdown data

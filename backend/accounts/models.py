@@ -4,9 +4,19 @@ We implement authentication ourselves (no OAuth / third-party provider). Email
 is the unique login identifier; there is no username.
 """
 
+import re
+from binascii import unhexlify
+
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
 from django.utils import timezone
+from django_otp.plugins.otp_totp.models import TOTPDevice
+from django.core.validators import MinValueValidator
+from django.core.exceptions import ValidationError
+
+from .encryption import decrypt_totp_key, encrypt_totp_key
+
+_HEX_RE = re.compile(r'^[0-9a-fA-F]+$')
 
 
 class UserManager(BaseUserManager):
@@ -145,6 +155,100 @@ class StaffInviteToken(_HashedToken):
         return f'StaffInviteToken(user={self.user_id})'
 
 
+class MFAResetRequest(models.Model):
+    """Identity-verified request to reset a user's MFA enrollment."""
+
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Pending'
+        RESOLVED = 'resolved', 'Resolved'
+        REJECTED = 'rejected', 'Rejected'
+
+    requester = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name='mfa_reset_requests'
+    )
+    target_user = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name='mfa_reset_targets'
+    )
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.PENDING
+    )
+    reason = models.CharField(max_length=255, blank=True)
+
+    verification_method = models.CharField(max_length=255, blank=True)
+    verification_outcome = models.CharField(max_length=255, blank=True)
+
+    reviewed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='reviewed_mfa_reset_requests',
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return (
+            f'MFAResetRequest(requester={self.requester_id}, '
+            f'target={self.target_user_id}, status={self.status})'
+        )
+
+
+class VolunteerDeactivationRequest(models.Model):
+    """Volunteer-initiated account deactivation request reviewed by staff.
+
+    The request itself does not deactivate the account. A staff approval action
+    performs the lifecycle cascade so account invalidation, session cancellation,
+    and audit logging happen together.
+    """
+
+    class Status(models.TextChoices):
+        PENDING = 'pending', 'Pending'
+        APPROVED = 'approved', 'Approved'
+        REJECTED = 'rejected', 'Rejected'
+
+    requester = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name='deactivation_requests'
+    )
+    status = models.CharField(
+        max_length=20, choices=Status.choices, default=Status.PENDING
+    )
+    reason = models.TextField(blank=True)
+
+    reviewed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='reviewed_deactivation_requests',
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    staff_note = models.TextField(blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['requester'],
+                condition=models.Q(status='pending'),
+                name='unique_pending_volunteer_deactivation_request',
+            ),
+        ]
+
+    def __str__(self):
+        return (
+            f'VolunteerDeactivationRequest('
+            f'requester={self.requester_id}, status={self.status})'
+        )
+
+
 class MFABackupCode(models.Model):
     """Single-use recovery code for TOTP MFA.
 
@@ -168,3 +272,60 @@ class MFABackupCode(models.Model):
 
     def __str__(self):
         return f'MFABackupCode(user={self.user_id}, used={self.used_at is not None})'
+
+class GlobalConfiguration(models.Model):
+    """
+    Stores system-wide settings that are admin-configurable.
+    Enforces singleton pattern (only one configuration row).
+    """
+    jit_disclosure_window_minutes = models.IntegerField(
+        default=120,  # 2 hours default
+        validators=[MinValueValidator(30)],
+        help_text="The JIT disclosure window in minutes. Must be at least 30 minutes."
+    )
+
+    class Meta:
+        verbose_name = "Global Configuration"
+        verbose_name_plural = "Global Configuration"
+
+    def clean(self):
+        # Server-side validation floor check
+        if self.jit_disclosure_window_minutes < 30:
+            raise ValidationError(
+                {"jit_disclosure_window_minutes": "The JIT disclosure window cannot be set to less than 30 minutes."}
+            )
+
+    def save(self, *args, **kwargs):
+        # Enforce singleton pattern
+        if not self.pk and GlobalConfiguration.objects.exists():
+            raise ValidationError("There can only be one GlobalConfiguration instance.")
+        self.full_clean()  # Ensure clean() validation is always run on save
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"Global System Configuration (JIT Window: {self.jit_disclosure_window_minutes} mins)"
+    
+
+class EncryptedTOTPDevice(TOTPDevice):
+    """Proxy of TOTPDevice that stores the TOTP secret encrypted at rest.
+
+    The key column is widened to varchar(500) via migration 0004 to fit the
+    Fernet ciphertext. On save, plaintext hex keys are encrypted before
+    writing. bin_key decrypts transparently so django-otp verify_token works
+    without any other changes.
+    """
+
+    class Meta:
+        proxy = True
+
+    @property
+    def bin_key(self):
+        raw = self.key
+        if raw and not _HEX_RE.match(raw):
+            raw = decrypt_totp_key(raw)
+        return unhexlify(raw)
+
+    def save(self, *args, **kwargs):
+        if self.key and _HEX_RE.match(self.key):
+            self.key = encrypt_totp_key(self.key)
+        super().save(*args, **kwargs)

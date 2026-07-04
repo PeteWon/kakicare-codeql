@@ -15,10 +15,12 @@ import { Link } from 'react-router-dom';
 import { Button, Card, TextField } from '@/components';
 import { api } from '@/lib/api';
 import { email as emailRule, required, validate } from '@/lib/validation';
+import { usePageTitle } from '@/lib/usePageTitle';
 
 type PageState = 'form' | 'sent';
 
 export function ForgotPassword() {
+  usePageTitle('Reset password');
   const [pageState, setPageState] = useState<PageState>('form');
   const [email, setEmail] = useState('');
   const [emailError, setEmailError] = useState<string | null>(null);
@@ -46,7 +48,7 @@ export function ForgotPassword() {
 
   if (pageState === 'sent') {
     return (
-      <section className="mx-auto max-w-md py-8">
+      <section className="mx-auto max-w-md py-8 my-auto">
         <Card className="space-y-4 text-center">
           <h1 className="font-serif text-2xl font-semibold text-primary-900">
             Check your email
@@ -104,6 +106,13 @@ export function ForgotPassword() {
           className="font-medium text-primary-700 hover:text-primary-900"
         >
           Sign in
+        </Link>
+      </p>
+
+      <p className="mt-3 text-center text-sm text-primary-500">
+        Need an MFA reset instead?{' '}
+        <Link to="/mfa-reset" className="font-medium text-primary-700 hover:text-primary-900">
+          Request a reset
         </Link>
       </p>
     </section>

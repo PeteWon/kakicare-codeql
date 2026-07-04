@@ -3,6 +3,7 @@ import type { FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { Button, Card, TextField } from '@/components';
 import { api, ApiError } from '@/lib/api';
+import { usePageTitle } from '@/lib/usePageTitle';
 import {
   email as emailRule,
   matches,
@@ -26,6 +27,7 @@ import {
 type PageState = 'form' | 'pending';
 
 export function Register() {
+  usePageTitle('Volunteer with us');
   const [pageState, setPageState] = useState<PageState>('form');
 
   const [fullName, setFullName] = useState('');
@@ -100,6 +102,15 @@ export function Register() {
               Back to sign in
             </Button>
           </Link>
+          <p className="mt-4 text-sm text-primary-600">
+            Didn't get the email?{' '}
+            <Link
+              to="/resend-verification"
+              className="font-medium text-primary-700 hover:text-primary-900"
+            >
+              Resend verification link
+            </Link>
+          </p>
         </Card>
       </section>
     );
@@ -124,30 +135,36 @@ export function Register() {
           ) : null}
 
           <TextField
+            id="fullName"
             label="Full name"
             name="fullName"
             autoComplete="name"
             autoFocus
+            required
             value={fullName}
             error={fullNameError}
             onChange={(e) => setFullName(e.target.value)}
           />
 
           <TextField
+            id="email"
             label="Email"
             type="email"
             name="email"
             autoComplete="email"
+            required
             value={email}
             error={emailError}
             onChange={(e) => setEmail(e.target.value)}
           />
 
           <TextField
+            id="password"
             label="Password"
             type="password"
             name="password"
             autoComplete="new-password"
+            required
             value={password}
             error={passwordError}
             hint="At least 12 characters."
@@ -155,10 +172,12 @@ export function Register() {
           />
 
           <TextField
+            id="confirmPassword"
             label="Confirm password"
             type="password"
             name="confirmPassword"
             autoComplete="new-password"
+            required
             value={confirmPassword}
             error={confirmPasswordError}
             onChange={(e) => setConfirmPassword(e.target.value)}

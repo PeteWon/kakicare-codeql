@@ -12,15 +12,18 @@ import re
 from datetime import timedelta
 
 from django.core import mail
+from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
 
 from accounts.models import (
     EmailVerificationToken,
+    MFAResetRequest,
     PasswordResetToken,
     StaffInviteToken,
     User,
+    VolunteerDeactivationRequest,
 )
 from accounts.views import (
     _generate_backup_codes,
@@ -31,10 +34,17 @@ from kakicare.test_utils import (
     DEFAULT_PASSWORD,
     KakiCareAPITestCase,
     add_confirmed_totp_device,
+    create_active_match,
+    create_senior,
+    create_session,
     create_staff,
+    create_approved_volunteer,
     create_volunteer,
     current_totp,
 )
+from audit.models import AuditLogEntry
+from matching.models import Match
+from sessions.models import Session
 
 
 class LoginTests(KakiCareAPITestCase):
@@ -212,6 +222,320 @@ class PasswordResetTests(KakiCareAPITestCase):
         self.assertEqual(resp.status_code, 400)
 
 
+class MFAResetFlowTests(KakiCareAPITestCase):
+    def setUp(self):
+        super().setUp()
+        self.request_url = reverse('auth-mfa-reset-request')
+        self.resolve_url_template = 'staff-mfa-reset-resolve'
+        self.volunteer = create_volunteer(email='lost-mfa@example.com')
+        self.staff = create_staff(email='resolver@example.com')
+        self.superuser = User.objects.create_superuser(
+            email='admin@example.com',
+            password=DEFAULT_PASSWORD,
+            full_name='Admin User',
+        )
+
+    def test_user_can_request_reset_and_it_is_audited(self):
+        self.assertEqual(
+            self.client.post(
+                self.request_url,
+                {'email': 'lost-mfa@example.com', 'password': DEFAULT_PASSWORD},
+            ).status_code,
+            200,
+        )
+        request_obj = MFAResetRequest.objects.get(requester=self.volunteer)
+        self.assertEqual(request_obj.status, MFAResetRequest.Status.PENDING)
+        self.assertTrue(
+            AuditLogEntry.objects.filter(action='auth.mfa.reset.requested', target_id=str(request_obj.pk)).exists()
+        )
+
+    def test_request_response_is_generic_and_leaks_no_request_id(self):
+        # Valid and invalid credentials must return an identical body so the
+        # endpoint cannot be used as a credential/account enumeration oracle.
+        valid = self.client.post(
+            self.request_url,
+            {'email': 'lost-mfa@example.com', 'password': DEFAULT_PASSWORD},
+        )
+        invalid = self.client.post(
+            self.request_url,
+            {'email': 'lost-mfa@example.com', 'password': 'wrong-password-123'},
+        )
+        self.assertEqual(valid.status_code, 200)
+        self.assertEqual(invalid.status_code, 200)
+        self.assertNotIn('request_id', valid.data)
+        self.assertEqual(valid.data, invalid.data)
+        # Only the valid request creates a row.
+        self.assertEqual(MFAResetRequest.objects.filter(requester=self.volunteer).count(), 1)
+
+    def test_staff_can_resolve_volunteer_reset_and_it_is_audited(self):
+        device = add_confirmed_totp_device(self.volunteer)
+        _generate_backup_codes(self.volunteer)
+        request_obj = MFAResetRequest.objects.create(
+            requester=self.volunteer,
+            target_user=self.volunteer,
+            reason='lost_authenticator',
+        )
+
+        self.client.force_authenticate(user=self.staff)
+        resp = self.client.post(
+            reverse(self.resolve_url_template, args=[request_obj.pk]),
+            {
+                'verification_method': 'phone callback to registered number',
+                'verification_outcome': 'identity matched',
+            },
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        request_obj.refresh_from_db()
+        self.assertEqual(request_obj.status, MFAResetRequest.Status.RESOLVED)
+        self.assertEqual(request_obj.verification_method, 'phone callback to registered number')
+        self.assertFalse(device.__class__.objects.filter(user=self.volunteer).exists())
+        self.assertEqual(self.volunteer.mfa_backup_codes.filter(used_at__isnull=True).count(), 0)
+        self.assertTrue(
+            AuditLogEntry.objects.filter(action='auth.mfa.reset.completed', target_id=str(request_obj.pk)).exists()
+        )
+
+    def test_staff_resolve_requires_verification_details(self):
+        request_obj = MFAResetRequest.objects.create(
+            requester=self.volunteer,
+            target_user=self.volunteer,
+            reason='lost_authenticator',
+        )
+        self.client.force_authenticate(user=self.staff)
+        resp = self.client.post(reverse(self.resolve_url_template, args=[request_obj.pk]), {})
+        self.assertEqual(resp.status_code, 400)
+        request_obj.refresh_from_db()
+        self.assertEqual(request_obj.status, MFAResetRequest.Status.PENDING)
+
+    def test_staff_cannot_reset_another_staff_mfa(self):
+        # §10.1.2 / FR-S-08: non-admin staff may reset volunteers only; a peer
+        # staff target requires an admin actor.
+        target_staff = create_staff(email='peer-staff@example.com')
+        device = add_confirmed_totp_device(target_staff)
+        request_obj = MFAResetRequest.objects.create(
+            requester=target_staff,
+            target_user=target_staff,
+            reason='lost_authenticator',
+        )
+        self.client.force_authenticate(user=self.staff)
+        resp = self.client.post(
+            reverse(self.resolve_url_template, args=[request_obj.pk]),
+            {'verification_method': 'phone callback', 'verification_outcome': 'identity matched'},
+        )
+        self.assertEqual(resp.status_code, 403)
+        request_obj.refresh_from_db()
+        self.assertEqual(request_obj.status, MFAResetRequest.Status.PENDING)
+        # The target's MFA device must remain intact.
+        self.assertTrue(device.__class__.objects.filter(user=target_staff).exists())
+
+    def test_admin_fallback_requires_out_of_band_verification_details(self):
+        request_obj = MFAResetRequest.objects.create(
+            requester=self.volunteer,
+            target_user=self.volunteer,
+            reason='lost_authenticator',
+        )
+
+        self.client.force_authenticate(user=self.superuser)
+        missing = self.client.post(reverse(self.resolve_url_template, args=[request_obj.pk]), {})
+        self.assertEqual(missing.status_code, 400)
+
+        ok = self.client.post(
+            reverse(self.resolve_url_template, args=[request_obj.pk]),
+            {
+                'verification_method': 'phone callback to registered number',
+                'verification_outcome': 'identity matched',
+            },
+        )
+        self.assertEqual(ok.status_code, 200)
+
+        request_obj.refresh_from_db()
+        self.assertEqual(request_obj.reviewed_by, self.superuser)
+        self.assertEqual(request_obj.verification_method, 'phone callback to registered number')
+        self.assertEqual(request_obj.verification_outcome, 'identity matched')
+        audit = AuditLogEntry.objects.get(action='auth.mfa.reset.completed', target_id=str(request_obj.pk))
+        self.assertEqual(audit.metadata['verification_method'], 'phone callback to registered number')
+        self.assertEqual(audit.metadata['verification_outcome'], 'identity matched')
+
+
+class VolunteerDeactivationFlowTests(KakiCareAPITestCase):
+    def setUp(self):
+        super().setUp()
+        self.request_url = reverse('auth-deactivation-request')
+        self.list_url = reverse('staff-deactivation-request-list')
+        self.volunteer = create_approved_volunteer(email='deactivate-me@example.com')
+        self.staff = create_staff(email='deactivation-reviewer@example.com')
+
+    def _resolve_url(self, request_obj):
+        return reverse('staff-deactivation-request-resolve', args=[request_obj.pk])
+
+    def test_volunteer_can_request_deactivation_and_it_is_audited(self):
+        self.client.force_authenticate(user=self.volunteer)
+        resp = self.client.post(
+            self.request_url,
+            {'reason': 'I am leaving the programme.'},
+        )
+
+        self.assertEqual(resp.status_code, 201)
+        request_obj = VolunteerDeactivationRequest.objects.get(
+            requester=self.volunteer
+        )
+        self.assertEqual(request_obj.status, VolunteerDeactivationRequest.Status.PENDING)
+        self.assertEqual(request_obj.reason, 'I am leaving the programme.')
+        self.assertTrue(
+            AuditLogEntry.objects.filter(
+                action='auth.deactivation.requested',
+                target_id=str(request_obj.pk),
+            ).exists()
+        )
+
+    def test_duplicate_pending_request_is_rejected(self):
+        VolunteerDeactivationRequest.objects.create(requester=self.volunteer)
+
+        self.client.force_authenticate(user=self.volunteer)
+        resp = self.client.post(self.request_url, {'reason': 'Second request'})
+
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(
+            VolunteerDeactivationRequest.objects.filter(
+                requester=self.volunteer,
+                status=VolunteerDeactivationRequest.Status.PENDING,
+            ).count(),
+            1,
+        )
+
+    def test_staff_cannot_create_volunteer_deactivation_request(self):
+        self.client.force_authenticate(user=self.staff)
+        resp = self.client.post(self.request_url, {'reason': 'Not a volunteer'})
+
+        self.assertEqual(resp.status_code, 403)
+        self.assertFalse(VolunteerDeactivationRequest.objects.exists())
+
+    def test_staff_can_list_pending_deactivation_requests(self):
+        request_obj = VolunteerDeactivationRequest.objects.create(
+            requester=self.volunteer,
+            reason='Please deactivate my account.',
+        )
+
+        self.client.force_authenticate(user=self.staff)
+        resp = self.client.get(self.list_url)
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data['count'], 1)
+        self.assertEqual(resp.data['results'][0]['id'], request_obj.pk)
+        self.assertEqual(
+            resp.data['results'][0]['requester_email'],
+            'deactivate-me@example.com',
+        )
+        self.assertTrue(
+            AuditLogEntry.objects.filter(
+                action='auth.deactivation.list',
+                target_type='VolunteerDeactivationRequest',
+            ).exists()
+        )
+
+    def test_volunteer_cannot_list_staff_deactivation_queue(self):
+        self.client.force_authenticate(user=self.volunteer)
+        resp = self.client.get(self.list_url)
+
+        self.assertEqual(resp.status_code, 403)
+
+    def test_staff_reject_keeps_account_active_and_sessions_unchanged(self):
+        senior = create_senior(self.staff)
+        match = create_active_match(self.volunteer, senior, self.staff)
+        session = create_session(match, status=Session.Status.CONFIRMED)
+        request_obj = VolunteerDeactivationRequest.objects.create(
+            requester=self.volunteer
+        )
+
+        self.client.force_authenticate(user=self.staff)
+        resp = self.client.post(
+            self._resolve_url(request_obj),
+            {'decision': 'reject', 'staff_note': 'Volunteer withdrew request.'},
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        request_obj.refresh_from_db()
+        self.volunteer.refresh_from_db()
+        session.refresh_from_db()
+        match.refresh_from_db()
+        self.assertEqual(request_obj.status, VolunteerDeactivationRequest.Status.REJECTED)
+        self.assertTrue(self.volunteer.is_active)
+        self.assertEqual(session.status, Session.Status.CONFIRMED)
+        self.assertEqual(match.status, Match.Status.ACTIVE)
+        self.assertTrue(
+            AuditLogEntry.objects.filter(
+                action='auth.deactivation.rejected',
+                target_id=str(request_obj.pk),
+            ).exists()
+        )
+
+    def test_staff_approval_deactivates_account_ends_matches_and_cancels_active_sessions(self):
+        senior = create_senior(self.staff)
+        match = create_active_match(self.volunteer, senior, self.staff)
+        pending = create_session(match, status=Session.Status.PENDING_CONFIRMATION)
+        confirmed = create_session(match, status=Session.Status.CONFIRMED)
+        in_progress = create_session(match, status=Session.Status.IN_PROGRESS)
+        completed = create_session(match, status=Session.Status.COMPLETED)
+        cancelled = create_session(match, status=Session.Status.CANCELLED)
+        request_obj = VolunteerDeactivationRequest.objects.create(
+            requester=self.volunteer,
+            reason='Please close my account.',
+        )
+
+        self.client.force_authenticate(user=self.staff)
+        resp = self.client.post(
+            self._resolve_url(request_obj),
+            {'decision': 'approve', 'staff_note': 'Verified request.'},
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        request_obj.refresh_from_db()
+        self.volunteer.refresh_from_db()
+        match.refresh_from_db()
+        for session in (pending, confirmed, in_progress, completed, cancelled):
+            session.refresh_from_db()
+
+        self.assertEqual(request_obj.status, VolunteerDeactivationRequest.Status.APPROVED)
+        self.assertEqual(request_obj.reviewed_by, self.staff)
+        self.assertFalse(self.volunteer.is_active)
+        self.assertEqual(match.status, Match.Status.ENDED)
+        self.assertIsNotNone(match.ended_at)
+        for session in (pending, confirmed, in_progress):
+            self.assertEqual(session.status, Session.Status.CANCELLED)
+            self.assertEqual(
+                session.cancel_reason,
+                'Volunteer account deactivation approved.',
+            )
+        self.assertEqual(completed.status, Session.Status.COMPLETED)
+        self.assertEqual(cancelled.status, Session.Status.CANCELLED)
+
+        audit = AuditLogEntry.objects.get(
+            action='auth.deactivation.approved',
+            target_id=str(request_obj.pk),
+        )
+        self.assertEqual(audit.metadata['target_user_id'], self.volunteer.pk)
+        self.assertEqual(audit.metadata['cancelled_session_count'], 3)
+        self.assertEqual(audit.metadata['ended_match_count'], 1)
+
+    def test_resolved_request_cannot_be_resolved_again(self):
+        request_obj = VolunteerDeactivationRequest.objects.create(
+            requester=self.volunteer,
+            status=VolunteerDeactivationRequest.Status.REJECTED,
+            reviewed_by=self.staff,
+            reviewed_at=timezone.now(),
+        )
+
+        self.client.force_authenticate(user=self.staff)
+        resp = self.client.post(
+            self._resolve_url(request_obj),
+            {'decision': 'approve'},
+        )
+
+        self.assertEqual(resp.status_code, 400)
+        self.volunteer.refresh_from_db()
+        self.assertTrue(self.volunteer.is_active)
+
+
 class RegistrationTests(KakiCareAPITestCase):
     def setUp(self):
         super().setUp()
@@ -293,6 +617,65 @@ class EmailVerificationTests(KakiCareAPITestCase):
         token_obj = EmailVerificationToken.objects.get(user=self.user)
         self.assertNotEqual(token_obj.token_hash, raw)
         self.assertEqual(token_obj.token_hash, _hash_token(raw))
+
+
+class ResendVerificationTests(KakiCareAPITestCase):
+    """Self-service recovery for a lost/expired verification email."""
+
+    def setUp(self):
+        super().setUp()
+        self.url = reverse('auth-resend-verification')
+        self.user = create_volunteer(
+            email='unverified@example.com', is_email_verified=False
+        )
+
+    def test_resend_issues_new_token_and_sends_email(self):
+        resp = self.client.post(self.url, {'email': 'unverified@example.com'})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(
+            EmailVerificationToken.objects.filter(
+                user=self.user, used_at__isnull=True
+            ).count(),
+            1,
+        )
+
+    def test_resend_expires_previous_outstanding_token(self):
+        # An earlier (e.g. lost) verification token is outstanding.
+        old = EmailVerificationToken.objects.create(
+            user=self.user,
+            token_hash=_hash_token('old-token'),
+            expires_at=timezone.now() + timedelta(hours=24),
+        )
+        resp = self.client.post(self.url, {'email': 'unverified@example.com'})
+        self.assertEqual(resp.status_code, 200)
+        old.refresh_from_db()
+        # Old link is invalidated so only one live link ever exists.
+        self.assertIsNotNone(old.used_at)
+        self.assertEqual(
+            EmailVerificationToken.objects.filter(
+                user=self.user, used_at__isnull=True
+            ).count(),
+            1,
+        )
+
+    def test_already_verified_email_is_a_noop_but_generic_200(self):
+        verified = create_volunteer(
+            email='done@example.com', is_email_verified=True
+        )
+        resp = self.client.post(self.url, {'email': 'done@example.com'})
+        # SR-AUTH-06: identical generic response, but no email/token issued.
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertEqual(
+            EmailVerificationToken.objects.filter(user=verified).count(), 0
+        )
+
+    def test_unknown_email_is_a_noop_but_generic_200(self):
+        resp = self.client.post(self.url, {'email': 'nobody@example.com'})
+        # SR-AUTH-06: cannot distinguish unknown from known/unverified.
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(len(mail.outbox), 0)
 
 
 class StaffInviteTests(KakiCareAPITestCase):
@@ -401,3 +784,39 @@ class StaffInviteTests(KakiCareAPITestCase):
         token_obj = StaffInviteToken.objects.get(user=self.user, used_at__isnull=True)
         self.assertNotEqual(token_obj.token_hash, token)
         self.assertEqual(token_obj.token_hash, _hash_token(token))
+
+
+class AdminPortalMfaLoginTests(KakiCareAPITestCase):
+    """Regression test for issue #107.
+
+    django-otp's own device resolution (django_otp.device_classes) excludes
+    proxy models, so the Django admin's OTP login always resolves devices as
+    the base TOTPDevice, never our EncryptedTOTPDevice proxy. Without the
+    AccountsConfig.ready() patch, this crashed with a binascii.Error because
+    the base bin_key tried to unhexlify the Fernet-encrypted key directly.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.admin_user = User.objects.create_superuser(
+            email='admin-mfa-test@example.com',
+            password=DEFAULT_PASSWORD,
+            full_name='Admin MfaTest',
+        )
+        self.device = add_confirmed_totp_device(self.admin_user)
+
+    def test_admin_login_with_real_totp_code_succeeds(self):
+        client = Client()
+        resp = client.post(
+            '/manage/portal/login/',
+            {
+                'username': self.admin_user.email,
+                'password': DEFAULT_PASSWORD,
+                # No otp_device: this matches the original crash path, which
+                # falls back to django_otp.match_token(user, token).
+                'otp_token': current_totp(self.device),
+            },
+        )
+        # A successful OTP-gated admin login redirects (302) to the admin
+        # index. Before the fix this raised a 500 (binascii.Error) instead.
+        self.assertEqual(resp.status_code, 302)

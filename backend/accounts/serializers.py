@@ -2,7 +2,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
-from .models import User
+from .models import User, VolunteerDeactivationRequest
 
 
 class RegisterSerializer(serializers.Serializer):
@@ -52,6 +52,45 @@ class VerifyEmailSerializer(serializers.Serializer):
     """Input validation for POST /api/auth/verify-email."""
 
     token = serializers.CharField(min_length=1)
+
+
+class ContactSerializer(serializers.Serializer):
+    """Input for POST /api/auth/contact (public landing-page contact form)."""
+
+    name = serializers.CharField(min_length=1, max_length=150)
+    email = serializers.EmailField()
+    message = serializers.CharField(min_length=10, max_length=5000)
+
+    def validate_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError('Name must not be blank.')
+        return value
+
+    def validate_email(self, value):
+        return value.strip().lower()
+
+    def validate_message(self, value):
+        value = value.strip()
+        if len(value) < 10:
+            raise serializers.ValidationError(
+                'Message must be at least 10 characters after trimming whitespace.'
+            )
+        return value
+
+
+class ResendVerificationSerializer(serializers.Serializer):
+    """Input for POST /api/auth/resend-verification.
+
+    Email only — the endpoint re-sends the verification link to an unverified
+    account. Like password-reset, the response is identical whether or not the
+    email maps to an eligible account (SR-AUTH-06 anti-enumeration).
+    """
+
+    email = serializers.EmailField()
+
+    def validate_email(self, value):
+        return value.strip().lower()
 
 
 class LoginSerializer(serializers.Serializer):
@@ -106,6 +145,71 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
     new_password = serializers.CharField(write_only=True, min_length=12)
 
 
+class MFAResetRequestSerializer(serializers.Serializer):
+    """Input for POST /api/auth/mfa-reset/request.
+
+    The requester proves identity with their email and password so they can ask
+    for an MFA reset even if they no longer have access to the authenticator.
+    """
+
+    email = serializers.EmailField()
+    password = serializers.CharField(write_only=True)
+
+    def validate_email(self, value):
+        return value.strip().lower()
+
+
+class MFAResetResolveSerializer(serializers.Serializer):
+    """Input for POST /api/staff/mfa-reset/requests/<id>/resolve.
+
+    Admin fallback resets must record the out-of-band verification method and
+    outcome. Staff-level resets may omit those fields when no escalation is
+    required.
+    """
+
+    verification_method = serializers.CharField(required=False, allow_blank=False, max_length=255)
+    verification_outcome = serializers.CharField(required=False, allow_blank=False, max_length=255)
+    reason = serializers.CharField(required=False, allow_blank=True, max_length=255)
+
+
+class VolunteerDeactivationRequestSerializer(serializers.Serializer):
+    """Input for POST /api/auth/deactivation-request."""
+
+    reason = serializers.CharField(required=False, allow_blank=True, max_length=1000)
+
+
+class VolunteerDeactivationRequestReadSerializer(serializers.ModelSerializer):
+    """Staff/volunteer-safe representation of an account deactivation request."""
+
+    requester_email = serializers.EmailField(source='requester.email', read_only=True)
+    requester_full_name = serializers.CharField(source='requester.full_name', read_only=True)
+    reviewed_by_email = serializers.EmailField(source='reviewed_by.email', read_only=True)
+
+    class Meta:
+        model = VolunteerDeactivationRequest
+        fields = [
+            'id',
+            'requester',
+            'requester_email',
+            'requester_full_name',
+            'status',
+            'reason',
+            'reviewed_by',
+            'reviewed_by_email',
+            'reviewed_at',
+            'staff_note',
+            'created_at',
+        ]
+        read_only_fields = fields
+
+
+class VolunteerDeactivationResolveSerializer(serializers.Serializer):
+    """Input for POST /api/staff/deactivation-requests/<id>/resolve/."""
+
+    decision = serializers.ChoiceField(choices=['approve', 'reject'])
+    staff_note = serializers.CharField(required=False, allow_blank=True, max_length=1000)
+
+
 class AcceptInviteSerializer(serializers.Serializer):
     """Input for POST /api/auth/accept-invite.
 
@@ -116,4 +220,11 @@ class AcceptInviteSerializer(serializers.Serializer):
     """
 
     token = serializers.CharField(min_length=1)
+    new_password = serializers.CharField(write_only=True, min_length=12)
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    """Input for POST /api/auth/change-password."""
+
+    current_password = serializers.CharField(write_only=True)
     new_password = serializers.CharField(write_only=True, min_length=12)

@@ -6,12 +6,14 @@
 
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { api } from '@/lib/api';
+import { SkipLink } from '@/components';
 
 const NAV_ITEMS: { to: string; label: string; end: boolean }[] = [
   { to: '/volunteer', label: 'Dashboard', end: true },
   { to: '/volunteer/matches', label: 'My Matches', end: false },
   { to: '/volunteer/sessions', label: 'My Sessions', end: false },
   { to: '/volunteer/profile', label: 'Profile', end: false },
+  { to: '/volunteer/account', label: 'Account', end: false },
 ];
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
@@ -46,6 +48,7 @@ export function VolunteerLayout() {
 
   return (
     <div className="flex min-h-screen flex-col bg-cream">
+      <SkipLink />
       <header className="border-b border-cream-300 bg-white">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-4 py-3">
           <span className="font-serif text-lg font-semibold text-primary-700">
@@ -73,7 +76,7 @@ export function VolunteerLayout() {
       </header>
 
       {/* Extra bottom padding on mobile so content clears the fixed tab bar. */}
-      <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-6 pb-24 sm:pb-6">
+      <main id="main-content" className="mx-auto w-full max-w-3xl flex-1 px-4 py-6 pb-24 sm:pb-6">
         <Outlet />
       </main>
 

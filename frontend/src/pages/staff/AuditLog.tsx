@@ -12,6 +12,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, ApiError } from '@/lib/api';
+import { usePageTitle } from '@/lib/usePageTitle';
 import type { Paginated, StaffAuditLogEntry } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
@@ -44,6 +45,16 @@ function actionTone(action: string): string {
   return 'bg-primary-100 text-primary-700';
 }
 
+function metadataSummary(metadata: Record<string, unknown> | null): string {
+  if (!metadata) return '';
+  const parts: string[] = [];
+  const method = metadata.verification_method;
+  const outcome = metadata.verification_outcome;
+  if (typeof method === 'string' && method.trim()) parts.push(`method: ${method}`);
+  if (typeof outcome === 'string' && outcome.trim()) parts.push(`outcome: ${outcome}`);
+  return parts.join(' · ');
+}
+
 const TARGET_OPTIONS = [
   { value: '', label: 'All targets' },
   { value: 'Senior', label: 'Senior' },
@@ -56,6 +67,7 @@ const TARGET_OPTIONS = [
 // ---------------------------------------------------------------------------
 
 export function AuditLog() {
+  usePageTitle('Audit log');
   const [searchParams, setSearchParams] = useSearchParams();
   const targetTypeFilter = searchParams.get('target_type') ?? '';
   const actionFilter = searchParams.get('action') ?? '';
@@ -199,7 +211,7 @@ export function AuditLog() {
               <table className="min-w-full divide-y divide-cream-200">
                 <thead className="bg-cream-50">
                   <tr>
-                    {['Time', 'Actor', 'Role', 'Action', 'Target', 'IP'].map((h) => (
+                    {['Time', 'Actor', 'Role', 'Action', 'Target', 'Details', 'IP'].map((h) => (
                       <th
                         key={h}
                         scope="col"
@@ -248,6 +260,9 @@ export function AuditLog() {
                         ) : (
                           <span className="text-primary-300">—</span>
                         )}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-primary-500">
+                        {metadataSummary(entry.metadata) || '—'}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3 text-xs text-primary-400 font-mono">
                         {entry.request_ip ?? '—'}

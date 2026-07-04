@@ -26,6 +26,7 @@ class AuditLogEntrySerializer(serializers.ModelSerializer):
             'action',
             'target_type',
             'target_id',
+            'metadata',
             'request_ip',
             'timestamp',
         ]

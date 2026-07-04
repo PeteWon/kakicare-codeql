@@ -1,8 +1,16 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
+from audit.services import record_audit
+
 from .forms import UserAdminChangeForm, UserAdminCreationForm
-from .models import EmailVerificationToken, PasswordResetToken, StaffInviteToken, User
+from .models import (
+    EmailVerificationToken,
+    GlobalConfiguration,
+    PasswordResetToken,
+    StaffInviteToken,
+    User,
+)
 
 # NOTE: the Django admin is mounted at /manage/portal/ and is used operationally
 # by superusers to provision staff accounts. Creating a user here saves it
@@ -79,3 +87,37 @@ class PasswordResetTokenAdmin(admin.ModelAdmin):
 @admin.register(StaffInviteToken)
 class StaffInviteTokenAdmin(admin.ModelAdmin):
     list_display = ('user', 'created_at', 'expires_at', 'used_at')
+
+
+@admin.register(GlobalConfiguration)
+class GlobalConfigurationAdmin(admin.ModelAdmin):
+    list_display = ('jit_disclosure_window_minutes',)
+
+    def has_add_permission(self, request):
+        # Singleton: only allow adding the row if none exists yet.
+        if GlobalConfiguration.objects.exists():
+            return False
+        return super().has_add_permission(request)
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def save_model(self, request, obj, form, change):
+        if not change:
+            super().save_model(request, obj, form, change)
+            return
+
+        # SR-ADMIN-02: audit-log window changes with before/after values.
+        old_val = GlobalConfiguration.objects.get(pk=obj.pk).jit_disclosure_window_minutes
+        new_val = obj.jit_disclosure_window_minutes
+        super().save_model(request, obj, form, change)
+
+        if old_val != new_val:
+            record_audit(
+                user=request.user,
+                action=f'Changed JIT disclosure window from {old_val} mins to {new_val} mins.',
+                target_type='GlobalConfiguration',
+                target_id=str(obj.pk),
+                request_ip=request.META.get('REMOTE_ADDR'),
+            )
+            self.message_user(request, 'Configuration updated and change audit-logged.')

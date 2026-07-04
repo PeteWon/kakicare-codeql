@@ -20,6 +20,7 @@ import type { FormEvent } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError } from '@/lib/api';
+import { usePageTitle } from '@/lib/usePageTitle';
 import type { ApplicationStatus, DocumentInfo, StaffApplicationDetail } from '@/lib/types';
 
 // ---------------------------------------------------------------------------
@@ -67,10 +68,15 @@ function DocumentCard({ doc }: { doc: DocumentInfo }) {
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const objectUrlRef = useRef<string | null>(null);
 
-  // For images only: auto-fetch a preview blob on mount.
-  // SR-DATA-03: never use doc.download_url as a plain <img src> — it requires auth.
+  const isImage = doc.content_type.startsWith('image/');
+  const isPdf = doc.content_type === 'application/pdf';
+  const canPreview = isImage || isPdf;
+
+  // Auto-fetch a preview blob on mount for images and PDFs.
+  // SR-DATA-03: never use doc.download_url as a plain <img>/<iframe> src — it
+  // requires auth; we fetch with credentials and render via an object URL.
   useEffect(() => {
-    if (!doc.content_type.startsWith('image/')) return;
+    if (!canPreview) return;
     let cancelled = false;
     setPreviewLoading(true);
     api
@@ -124,8 +130,8 @@ function DocumentCard({ doc }: { doc: DocumentInfo }) {
 
   return (
     <div className="overflow-hidden rounded-2xl border border-cream-300 bg-white shadow-sm">
-      {/* Image preview (only for JPEG / PNG) */}
-      {doc.content_type.startsWith('image/') && (
+      {/* Inline preview: images via <img>, PDFs via <iframe>. */}
+      {canPreview && (
         <div className="border-b border-cream-200 bg-cream-50 flex items-center justify-center min-h-[160px]">
           {previewLoading && (
             <span
@@ -137,11 +143,22 @@ function DocumentCard({ doc }: { doc: DocumentInfo }) {
           {previewError && (
             <p className="text-xs text-primary-400 px-4 py-6">Preview unavailable.</p>
           )}
-          {previewUrl && !previewLoading && (
+          {previewUrl && !previewLoading && !previewError && isImage && (
             <img
               src={previewUrl}
               alt={`Preview of ${doc.original_filename}`}
               className="max-h-64 w-full object-contain"
+              // Covers the case where the fetch succeeds but the image element
+              // still fails to render (e.g. a CSP block or corrupt bytes) — the
+              // catch() only handles fetch failures.
+              onError={() => setPreviewError(true)}
+            />
+          )}
+          {previewUrl && !previewLoading && !previewError && isPdf && (
+            <iframe
+              src={previewUrl}
+              title={`Preview of ${doc.original_filename}`}
+              className="h-64 w-full bg-white"
             />
           )}
         </div>
@@ -384,6 +401,7 @@ function AvailabilityGrid({ availability }: { availability: Record<string, strin
 // ---------------------------------------------------------------------------
 
 export function ApplicationDetail() {
+  usePageTitle('Application');
   const { id } = useParams<{ id: string }>();
   const numericId = Number(id);
   const navigate = useNavigate();

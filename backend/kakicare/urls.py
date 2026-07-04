@@ -18,6 +18,8 @@ from django.contrib import admin
 from django.urls import include, path
 from django_otp.admin import OTPAdminSite
 
+from .views import CspReportView
+
 # SECURITY (admin-portal MFA): require a verified TOTP device to access the
 # Django admin, not just a password. Re-classing the default site keeps every
 # existing `@admin.register(...)` registration intact while adding the OTP gate
@@ -29,13 +31,17 @@ admin.site.__class__ = OTPAdminSite
 
 urlpatterns = [
     path('manage/portal/', admin.site.urls),
+    path('api/csp-report/', CspReportView.as_view(), name='csp-report'),
     path('api/auth/', include('accounts.urls')),
     path('api/volunteer/', include('volunteers.urls')),
     path('api/volunteer/', include('matching.volunteer_urls')),
     path('api/volunteer/', include('sessions.volunteer_urls')),
     path('api/staff/', include('volunteers.staff_urls')),
+    path('api/staff/', include('accounts.staff_urls')),
     path('api/staff/', include('seniors.staff_urls')),
     path('api/staff/', include('matching.staff_urls')),
     path('api/staff/', include('sessions.staff_urls')),
+    path('api/volunteer/', include('concerns.volunteer_urls')),
+    path('api/staff/', include('concerns.staff_urls')),
     path('api/staff/', include('audit.urls')),
 ]

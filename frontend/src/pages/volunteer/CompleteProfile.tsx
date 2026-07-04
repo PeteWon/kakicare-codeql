@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Button, Card, FileUpload, MultiSelect, TextField } from '@/components';
 import { api } from '@/lib/api';
+import { usePageTitle } from '@/lib/usePageTitle';
 import { phoneSG, required, validate } from '@/lib/validation';
 import type { ApplicationStatus, Region, TimeBlock, Weekday } from '@/lib/types';
 
@@ -78,6 +79,7 @@ function StatusDisplay({ status }: { status: Exclude<ApplicationStatus, 'incompl
 // ---------------------------------------------------------------------------
 
 export function CompleteProfile() {
+  usePageTitle('Complete your profile');
   type PageState = 'loading' | 'form' | 'status' | 'load_error';
   const [pageState, setPageState] = useState<PageState>('loading');
   const [appStatus, setAppStatus] = useState<ApplicationStatus>('incomplete');
@@ -96,6 +98,21 @@ export function CompleteProfile() {
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
+
+  // After a failed submit, bring the first invalid field into view so errors
+  // above the fold (e.g. contact number) aren't missed when the user was
+  // scrolled further down the form.
+  useEffect(() => {
+    if (!Object.values(errors).some(Boolean)) return;
+    const firstInvalid = formRef.current?.querySelector<HTMLElement>('[data-error="true"]');
+    if (!firstInvalid) return;
+    firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const focusable = firstInvalid.matches('input, textarea, select, button')
+      ? firstInvalid
+      : firstInvalid.querySelector<HTMLElement>('input, textarea, select, button');
+    focusable?.focus({ preventScroll: true });
+  }, [errors]);
 
   useEffect(() => {
     api.getVolunteerProfile()
@@ -232,7 +249,7 @@ export function CompleteProfile() {
         </div>
       )}
 
-      <form className="mt-6 space-y-6" onSubmit={handleSubmit} noValidate>
+      <form ref={formRef} className="mt-6 space-y-6" onSubmit={handleSubmit} noValidate>
         {formError ? (
           <div
             role="alert"

@@ -19,7 +19,9 @@ view that lacks a _audit call. No Senior-data code path exists outside these vie
 
 import logging
 
+from django.db import transaction
 from django.db.models import Q
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
@@ -27,6 +29,8 @@ from rest_framework.throttling import SimpleRateThrottle
 from rest_framework.views import APIView
 
 from audit.services import record_audit
+from matching.models import Match
+from sessions.models import Session
 from volunteers.permissions import IsStaff
 
 from .models import Senior
@@ -217,6 +221,18 @@ class SeniorDeactivateView(_AuditMixin, APIView):
 
     Soft-deactivates (sets is_active=False) rather than deleting the row.
 
+    Lifecycle cascade: deactivating a senior also ends the befriending
+    relationship cleanly, in one transaction:
+      - any non-ended matches for this senior are set to ENDED, and
+      - any upcoming, not-yet-started sessions (PENDING_CONFIRMATION / CONFIRMED)
+        under those matches are CANCELLED with an explanatory reason.
+    A session already IN_PROGRESS is left alone — a visit happening right now
+    must still be checked out and recorded. Completed/missed/cancelled sessions
+    are historical and untouched. This prevents the incoherent state where a
+    volunteer can keep booking or attending sessions for a senior who is no
+    longer in the programme. The session-booking endpoint also re-checks
+    is_active as defence-in-depth.
+
     Why soft-delete for sensitive personal records:
       - Preserves the full audit trail. Hard-deleting a Senior would leave
         AuditLogEntry rows pointing at a nonexistent target_id, breaking
@@ -243,8 +259,42 @@ class SeniorDeactivateView(_AuditMixin, APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        senior.is_active = False
-        senior.save(update_fields=['is_active'])
+        now = timezone.now()
+        with transaction.atomic():
+            senior.is_active = False
+            senior.save(update_fields=['is_active'])
 
-        self._audit(request, 'senior.deactivate', target_id=pk)
+            # End the relationship: no match for an inactive senior should remain
+            # proposed/active. Bulk update keeps this a single statement.
+            ended_matches = (
+                Match.objects
+                .filter(senior=senior)
+                .exclude(status=Match.Status.ENDED)
+                .update(status=Match.Status.ENDED, ended_at=now)
+            )
+
+            # Cancel upcoming sessions that have not started yet. IN_PROGRESS is
+            # deliberately excluded so an in-flight visit can still be checked out.
+            cancelled_sessions = (
+                Session.objects
+                .filter(
+                    match__senior=senior,
+                    status__in=[
+                        Session.Status.PENDING_CONFIRMATION,
+                        Session.Status.CONFIRMED,
+                    ],
+                )
+                .update(
+                    status=Session.Status.CANCELLED,
+                    cancel_reason='Senior record deactivated.',
+                )
+            )
+
+        self._audit(
+            request, 'senior.deactivate',
+            target_id=(
+                f'{pk},ended_matches={ended_matches},'
+                f'cancelled_sessions={cancelled_sessions}'
+            ),
+        )
         return Response(SeniorSerializer(senior).data)

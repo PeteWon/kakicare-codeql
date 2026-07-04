@@ -30,11 +30,12 @@ _VALID_BLOCKS = {'Morning', 'Afternoon', 'Evening'}
 # ---------------------------------------------------------------------------
 
 class VolunteerDocumentInfoSerializer(serializers.ModelSerializer):
-    """Safe representation of a document record.
+    """Safe representation of a document record for the owning volunteer.
 
     SECURITY: the physical file path (the `file` field) is intentionally
     excluded — never expose the server-side storage path to any client.
     Use the `download_url` to serve file content via the authorised endpoint.
+    checksum_sha256 and checksum_mismatch are staff-only; excluded here.
     """
 
     download_url = serializers.SerializerMethodField()
@@ -52,6 +53,13 @@ class VolunteerDocumentInfoSerializer(serializers.ModelSerializer):
 
     def get_download_url(self, obj: VolunteerDocument) -> str:
         return f'/api/volunteer/documents/{obj.pk}/download'
+
+
+class StaffVolunteerDocumentSerializer(VolunteerDocumentInfoSerializer):
+    """Document record for staff — adds integrity fields (SR-DATA-06)."""
+
+    class Meta(VolunteerDocumentInfoSerializer.Meta):
+        fields = VolunteerDocumentInfoSerializer.Meta.fields + ['checksum_mismatch']
 
 
 # ---------------------------------------------------------------------------
@@ -188,7 +196,7 @@ class StaffApplicationDetailSerializer(serializers.ModelSerializer):
     reviewed_by_email = serializers.EmailField(
         source='reviewed_by.email', read_only=True, allow_null=True
     )
-    documents = VolunteerDocumentInfoSerializer(many=True, read_only=True)
+    documents = StaffVolunteerDocumentSerializer(many=True, read_only=True)
 
     class Meta:
         model = VolunteerProfile

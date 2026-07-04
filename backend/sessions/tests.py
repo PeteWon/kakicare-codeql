@@ -10,6 +10,7 @@ import hashlib
 from datetime import timedelta
 
 from django.urls import reverse
+from django.utils import timezone
 
 from audit.models import AuditLogEntry
 from kakicare.test_utils import (
@@ -131,3 +132,38 @@ class SessionOwnershipTests(KakiCareAPITestCase):
             reverse('volunteer-session-detail', args=[self.session.pk])
         )
         self.assertEqual(resp.status_code, 200)
+
+
+class SessionBookingGuardTests(KakiCareAPITestCase):
+    """A volunteer must not be able to book a session against a senior whose
+    record has been deactivated, even if an ACTIVE match still exists."""
+
+    def setUp(self):
+        super().setUp()
+        self.staff = create_staff(email='coord-book@example.com')
+        self.volunteer = create_approved_volunteer(email='vol-book@example.com')
+        self.senior = create_senior(self.staff)
+        self.match = create_active_match(self.volunteer, self.senior, self.staff)
+        self.client.force_authenticate(user=self.volunteer)
+        self.url = reverse('volunteer-session-list-create')
+
+    def _payload(self):
+        start = timezone.now() + timedelta(days=1)
+        return {
+            'match_id': self.match.pk,
+            'session_type': 'visit',
+            'scheduled_start': start.isoformat(),
+            'scheduled_end': (start + timedelta(hours=1)).isoformat(),
+        }
+
+    def test_can_book_for_active_senior(self):
+        resp = self.client.post(self.url, self._payload(), format='json')
+        self.assertEqual(resp.status_code, 201)
+
+    def test_cannot_book_for_deactivated_senior(self):
+        self.senior.is_active = False
+        self.senior.save(update_fields=['is_active'])
+        resp = self.client.post(self.url, self._payload(), format='json')
+        self.assertEqual(resp.status_code, 400)
+        # No session row created.
+        self.assertEqual(Session.objects.filter(match=self.match).count(), 0)

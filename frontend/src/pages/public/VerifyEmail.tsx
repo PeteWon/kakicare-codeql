@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { Button, Card } from '@/components';
 import { api } from '@/lib/api';
+import { usePageTitle } from '@/lib/usePageTitle';
 
 // SECURITY NOTES (KakiCare email verification — see security report):
 //
@@ -21,6 +22,7 @@ const GENERIC_ERROR = 'This verification link is invalid or has expired.';
 type Status = 'loading' | 'success' | 'error';
 
 export function VerifyEmail() {
+  usePageTitle('Verify your email');
   const [searchParams] = useSearchParams();
   const [status, setStatus] = useState<Status>('loading');
   // Guard against React StrictMode's double-invocation of effects in development.
@@ -84,8 +86,7 @@ export function VerifyEmail() {
               Verification failed
             </h1>
             <p className="mt-2 text-primary-600">{GENERIC_ERROR}</p>
-            {/* Placeholder action — wire to a "resend verification" flow later. */}
-            <Link to="/register" className="mt-6 block">
+            <Link to="/resend-verification" className="mt-6 block">
               <Button fullWidth size="lg" variant="secondary">
                 Request a new link
               </Button>

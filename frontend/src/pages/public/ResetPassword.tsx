@@ -19,10 +19,12 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { Button, Card, TextField } from '@/components';
 import { api, ApiError } from '@/lib/api';
 import { matches, minLength, required, validate } from '@/lib/validation';
+import { usePageTitle } from '@/lib/usePageTitle';
 
 type PageState = 'form' | 'success' | 'invalid_token';
 
 export function ResetPassword() {
+  usePageTitle('Set new password');
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token') ?? '';
 
@@ -137,6 +139,7 @@ export function ResetPassword() {
             name="password"
             autoComplete="new-password"
             autoFocus
+            showToggle
             hint="At least 12 characters."
             value={password}
             error={passwordError}
@@ -151,6 +154,7 @@ export function ResetPassword() {
             type="password"
             name="confirmPassword"
             autoComplete="new-password"
+            showToggle
             value={confirmPassword}
             error={confirmPasswordError}
             onChange={(e) => {

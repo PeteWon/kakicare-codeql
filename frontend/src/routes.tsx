@@ -23,8 +23,11 @@ import { Login } from './pages/public/Login';
 import { Register } from './pages/public/Register';
 import { VerifyEmail } from './pages/public/VerifyEmail';
 import { ForgotPassword } from './pages/public/ForgotPassword';
+import { ResendVerification } from './pages/public/ResendVerification';
 import { ResetPassword } from './pages/public/ResetPassword';
+import { MfaResetRequest } from './pages/public/MfaResetRequest';
 import { AcceptInvite } from './pages/public/AcceptInvite';
+import { Contact } from './pages/public/Contact';
 import { NotFound } from './pages/public/NotFound';
 
 import { Dashboard } from './pages/volunteer/Dashboard';
@@ -42,7 +45,11 @@ import { SeniorForm } from './pages/staff/SeniorForm';
 import { StaffMatches } from './pages/staff/StaffMatches';
 import { ProposeMatch } from './pages/staff/ProposeMatch';
 import { Sessions } from './pages/staff/Sessions';
+import { Concerns } from './pages/staff/Concerns';
 import { AuditLog } from './pages/staff/AuditLog';
+import { DeactivationRequests } from './pages/staff/DeactivationRequests';
+import { MfaResetRequests } from './pages/staff/MfaResetRequests';
+import { AccountSettings } from './pages/shared/AccountSettings';
 
 export const router = createBrowserRouter([
   {
@@ -52,9 +59,12 @@ export const router = createBrowserRouter([
       { path: '/login', element: <Login /> },
       { path: '/register', element: <Register /> },
       { path: '/verify-email', element: <VerifyEmail /> },
+      { path: '/resend-verification', element: <ResendVerification /> },
       { path: '/forgot-password', element: <ForgotPassword /> },
+      { path: '/mfa-reset', element: <MfaResetRequest /> },
       { path: '/reset-password', element: <ResetPassword /> },
       { path: '/accept-invite', element: <AcceptInvite /> },
+      { path: '/contact', element: <Contact /> },
       { path: '/dashboard', element: <SmartRedirect /> },
       { path: '*', element: <NotFound /> },
     ],
@@ -74,6 +84,7 @@ export const router = createBrowserRouter([
           { path: 'sessions', element: <SessionHistory /> },
           { path: 'sessions/:id', element: <SessionDetail /> },
           { path: 'profile', element: <CompleteProfile /> },
+          { path: 'account', element: <AccountSettings /> },
         ],
       },
     ],
@@ -97,7 +108,15 @@ export const router = createBrowserRouter([
           { path: 'matches', element: <StaffMatches /> },
           { path: 'matches/new', element: <ProposeMatch /> },
           { path: 'sessions', element: <Sessions /> },
+          { path: 'concerns', element: <Concerns /> },
+          { path: 'deactivation-requests', element: <DeactivationRequests /> },
+          { path: 'mfa-resets', element: <MfaResetRequests /> },
           { path: 'audit-log', element: <AuditLog /> },
+          { path: 'account', element: <AccountSettings /> },
+          // Nested catch-all: keeps unrecognised /staff/* paths inside StaffLayout
+          // so the authenticated navbar/session context isn't lost. Without this,
+          // react-router falls through to the top-level '*' route under PublicLayout.
+          { path: '*', element: <NotFound /> },
         ],
       },
     ],

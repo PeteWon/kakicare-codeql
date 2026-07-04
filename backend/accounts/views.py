@@ -10,33 +10,46 @@ from django.contrib import auth
 from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.core.mail import send_mail
+from django.core.mail import EmailMessage, send_mail
 from django.db import transaction
 from django.middleware.csrf import get_token
 from django.utils import timezone
-from django_otp.plugins.otp_totp.models import TOTPDevice
+from .models import EncryptedTOTPDevice
 from rest_framework import status
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import SimpleRateThrottle
 from rest_framework.views import APIView
 
 from audit.services import record_audit
+from matching.models import Match
+from sessions.models import Session
 
 from .models import (
     EmailVerificationToken,
     MFABackupCode,
+    MFAResetRequest,
     PasswordResetToken,
     StaffInviteToken,
     User,
+    VolunteerDeactivationRequest,
 )
 from .serializers import (
     AcceptInviteSerializer,
+    ChangePasswordSerializer,
+    ContactSerializer,
     LoginSerializer,
+    MFAResetRequestSerializer,
+    MFAResetResolveSerializer,
     MFAVerifySerializer,
     PasswordResetConfirmSerializer,
     PasswordResetRequestSerializer,
     RegisterSerializer,
+    ResendVerificationSerializer,
+    VolunteerDeactivationRequestReadSerializer,
+    VolunteerDeactivationRequestSerializer,
+    VolunteerDeactivationResolveSerializer,
     VerifyEmailSerializer,
 )
 
@@ -111,6 +124,75 @@ class PasswordResetRateThrottle(SimpleRateThrottle):
 
     def get_cache_key(self, request, view):
         return self.cache_format % {'scope': self.scope, 'ident': self.get_ident(request)}
+
+
+class RegistrationRateThrottle(SimpleRateThrottle):
+    """SR-AUTH-04: 5 registration attempts per hour, keyed by source IP.
+
+    Each attempt triggers an outbound verification email — without a throttle
+    an attacker can abuse the SMTP relay and exhaust server resources.
+    """
+
+    scope = 'register'
+
+    def parse_rate(self, rate):
+        return (5, 3600)
+
+    def get_cache_key(self, request, view):
+        return self.cache_format % {'scope': self.scope, 'ident': self.get_ident(request)}
+
+
+class ResendVerificationRateThrottle(SimpleRateThrottle):
+    """SR-AUTH-04: 5 resend-verification requests per hour, keyed by source IP.
+
+    Each request can trigger an outbound verification email — throttling (as on
+    registration) stops an attacker abusing the SMTP relay.
+    """
+
+    scope = 'resend_verification'
+
+    def parse_rate(self, rate):
+        return (5, 3600)
+
+    def get_cache_key(self, request, view):
+        return self.cache_format % {'scope': self.scope, 'ident': self.get_ident(request)}
+
+
+class MFAResetRequestRateThrottle(SimpleRateThrottle):
+    """SR-AUTH-04: 5 MFA-reset requests per 15 minutes, keyed by source IP.
+
+    This endpoint verifies an email/password pair, so without a throttle it is
+    an unauthenticated credential-guessing oracle that bypasses the login
+    throttle. IP-keyed (not account-keyed) for the same reason as login.
+    """
+
+    scope = 'mfa_reset_request'
+
+    def parse_rate(self, rate):
+        return (5, 15 * 60)
+
+    def get_cache_key(self, request, view):
+        return self.cache_format % {'scope': self.scope, 'ident': self.get_ident(request)}
+
+
+class ContactRateThrottle(SimpleRateThrottle):
+    """5 contact-form submissions per hour, keyed by source IP.
+
+    Public and unauthenticated, and each submission sends an outbound email —
+    without a throttle it is an open relay for spamming the contact inbox.
+    """
+
+    scope = 'contact'
+
+    def parse_rate(self, rate):
+        return (5, 3600)
+
+    def get_cache_key(self, request, view):
+        return self.cache_format % {'scope': self.scope, 'ident': self.get_ident(request)}
+class _StandardPagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = 'page_size'
+    max_page_size = 100
 
 
 # ---------------------------------------------------------------------------
@@ -231,7 +313,7 @@ class LoginView(APIView):
             return Response({'status': 'invalid'}, status=status.HTTP_200_OK)
 
         # Determine MFA requirement based on role and enrolment state.
-        has_confirmed_totp = TOTPDevice.objects.devices_for_user(
+        has_confirmed_totp = EncryptedTOTPDevice.objects.devices_for_user(
             user, confirmed=True
         ).exists()
 
@@ -333,19 +415,19 @@ class MFASetupView(APIView):
         # codes). Confirmed devices are NOT removed here — they remain valid
         # until a new device is confirmed, so the user never loses MFA access
         # mid-setup if they restart the flow.
-        TOTPDevice.objects.filter(user=user, confirmed=False).delete()
+        EncryptedTOTPDevice.objects.filter(user=user, confirmed=False).delete()
         # Backup codes belong to the user, not a specific device. Wiping them on
         # every setup call would strand a user who already has a confirmed device
         # and valid codes if they bail mid-flow. Only clear when no confirmed
         # device exists — i.e. any existing codes are leftovers from an abandoned
         # initial setup, never delivered to the user.
-        has_confirmed_device = TOTPDevice.objects.devices_for_user(
+        has_confirmed_device = EncryptedTOTPDevice.objects.devices_for_user(
             user, confirmed=True
         ).exists()
         if not has_confirmed_device:
             user.mfa_backup_codes.all().delete()
 
-        device = TOTPDevice.objects.create(
+        device = EncryptedTOTPDevice.objects.create(
             user=user,
             name=f'totp-{user.pk}',
             confirmed=False,
@@ -400,13 +482,13 @@ class MFAVerifyView(APIView):
         # Post-login enrolment: prefer unconfirmed device (being confirmed now).
         if is_mid_login:
             device = (
-                TOTPDevice.objects.devices_for_user(user, confirmed=True).first()
-                or TOTPDevice.objects.filter(user=user, confirmed=False).first()
+                EncryptedTOTPDevice.objects.devices_for_user(user, confirmed=True).first()
+                or EncryptedTOTPDevice.objects.filter(user=user, confirmed=False).first()
             )
         else:
             device = (
-                TOTPDevice.objects.filter(user=user, confirmed=False).first()
-                or TOTPDevice.objects.devices_for_user(user, confirmed=True).first()
+                EncryptedTOTPDevice.objects.filter(user=user, confirmed=False).first()
+                or EncryptedTOTPDevice.objects.devices_for_user(user, confirmed=True).first()
             )
 
         if device is None and not backup_code:
@@ -513,18 +595,24 @@ class PasswordResetRequestView(APIView):
 
         reset_url = f'{settings.FRONTEND_BASE_URL}/reset-password?token={raw_token}'
 
-        send_mail(
-            subject='Reset your KakiCare password',
-            message=(
-                f'Hi {user.full_name},\n\n'
-                f'Click the link below to reset your password. '
-                f'The link expires in {_PASSWORD_RESET_EXPIRY_HOURS} hour(s).\n\n'
-                f'{reset_url}\n\n'
-                f'If you did not request a password reset, you can ignore this email.'
-            ),
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[user.email],
-        )
+        # Email delivery is best-effort: a transient SMTP failure must not 500 the
+        # request (and must not change the generic response, for anti-enumeration).
+        try:
+            send_mail(
+                subject='Reset your KakiCare password',
+                message=(
+                    f'Hi {user.full_name},\n\n'
+                    f'Click the link below to reset your password. '
+                    f'The link expires in {_PASSWORD_RESET_EXPIRY_HOURS} hour(s).\n\n'
+                    f'{reset_url}\n\n'
+                    f'If you did not request a password reset, you can ignore this email.'
+                ),
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[user.email],
+                fail_silently=False,
+            )
+        except Exception:
+            logger.exception('Failed to send password-reset email to %s', user.email)
 
         return generic_ok
 
@@ -600,6 +688,366 @@ class PasswordResetConfirmView(APIView):
 
 
 # ---------------------------------------------------------------------------
+# MFA reset request / resolve
+# ---------------------------------------------------------------------------
+
+def _clear_user_mfa(user: User) -> None:
+    """Remove all TOTP devices and backup codes for a user."""
+    EncryptedTOTPDevice.objects.filter(user=user).delete()
+    user.mfa_backup_codes.all().delete()
+
+
+class MFAResetRequestView(APIView):
+    """POST /api/auth/mfa-reset/request
+
+    A user who has lost their authenticator can verify with their password and
+    create a pending MFA reset request for their own account.
+    """
+
+    permission_classes = [AllowAny]
+    throttle_classes = [MFAResetRequestRateThrottle]
+
+    # SECURITY: identical body on every outcome. The caller must NOT be able to
+    # tell whether the credentials were valid — returning a success-only field
+    # (e.g. request_id) would make this an account/credential enumeration oracle.
+    _GENERIC_RESPONSE = {
+        'detail': 'If the credentials are valid, the reset request was submitted.'
+    }
+
+    def post(self, request):
+        serializer = MFAResetRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(self._GENERIC_RESPONSE, status=status.HTTP_200_OK)
+
+        email = serializer.validated_data['email']
+        password = serializer.validated_data['password']
+
+        user = User.objects.filter(
+            email=email, is_active=True, is_email_verified=True
+        ).first()
+
+        if user is None:
+            # Timing equalizer (SR-AUTH-06): run Argon2id against a dummy hash so
+            # a missing/inactive account is indistinguishable from a wrong
+            # password — mirrors LoginView.
+            check_password(password, _DUMMY_PASSWORD_HASH)
+            return Response(self._GENERIC_RESPONSE, status=status.HTTP_200_OK)
+
+        if not user.check_password(password):
+            return Response(self._GENERIC_RESPONSE, status=status.HTTP_200_OK)
+
+        request_obj = MFAResetRequest.objects.create(
+            requester=user,
+            target_user=user,
+            reason='lost_authenticator',
+        )
+        record_audit(
+            user=user,
+            action='auth.mfa.reset.requested',
+            target_type='MFAResetRequest',
+            target_id=request_obj.pk,
+            request_ip=_get_ip(request),
+        )
+
+        # SECURITY: do NOT include request_id (or any success-only field) — see
+        # _GENERIC_RESPONSE above. Staff locate pending requests via the audit
+        # log / requests queue, not from this response.
+        return Response(self._GENERIC_RESPONSE, status=status.HTTP_200_OK)
+
+
+class MFAResetResolveView(APIView):
+    """POST /api/staff/mfa-reset/requests/<id>/resolve
+
+    Authorisation tiering (Report 1 §10.1.2, FR-S-08): non-admin staff may only
+    reset MFA for VOLUNTEER accounts. Resets for staff or superuser accounts are
+    reserved for an admin (superuser) actor.
+
+    AC-12 / SR-ADMIN-03: every reset — not just admin fallbacks — must record an
+    out-of-band identity-verification method and outcome before it is executed.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk: int):
+        if not (request.user.role == User.Role.STAFF):
+            return Response({'detail': 'Forbidden.'}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = MFAResetResolveSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            try:
+                reset_request = (
+                    MFAResetRequest.objects.select_related('requester', 'target_user')
+                    .select_for_update()
+                    .get(pk=pk)
+                )
+            except MFAResetRequest.DoesNotExist:
+                return Response({'detail': 'Reset request not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+            if reset_request.status != MFAResetRequest.Status.PENDING:
+                return Response(
+                    {'detail': 'Reset request has already been resolved.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            target_user = reset_request.target_user
+            is_admin_actor = bool(request.user.is_superuser)
+            verification_method = serializer.validated_data.get('verification_method', '').strip()
+            verification_outcome = serializer.validated_data.get('verification_outcome', '').strip()
+
+            # §10.1.2 / FR-S-08: non-admin staff may reset volunteers only;
+            # staff/superuser targets require an admin actor.
+            if not is_admin_actor and target_user.role != User.Role.VOLUNTEER:
+                return Response({'detail': 'Forbidden.'}, status=status.HTTP_403_FORBIDDEN)
+
+            # AC-12 / SR-ADMIN-03: out-of-band verification is required for every
+            # MFA reset, regardless of actor or target role.
+            if not verification_method or not verification_outcome:
+                return Response(
+                    {
+                        'detail': (
+                            'Out-of-band verification method and outcome are required '
+                            'for MFA resets.'
+                        )
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            _clear_user_mfa(target_user)
+            now = timezone.now()
+            reset_request.status = MFAResetRequest.Status.RESOLVED
+            reset_request.reviewed_by = request.user
+            reset_request.reviewed_at = now
+            reset_request.resolved_at = now
+            reset_request.verification_method = verification_method
+            reset_request.verification_outcome = verification_outcome
+            reset_request.save(
+                update_fields=[
+                    'status',
+                    'reviewed_by',
+                    'reviewed_at',
+                    'resolved_at',
+                    'verification_method',
+                    'verification_outcome',
+                ]
+            )
+
+            record_audit(
+                user=request.user,
+                action='auth.mfa.reset.completed',
+                target_type='MFAResetRequest',
+                target_id=reset_request.pk,
+                metadata={
+                    'verification_method': verification_method,
+                    'verification_outcome': verification_outcome,
+                    'target_user_role': target_user.role,
+                },
+                request_ip=_get_ip(request),
+            )
+
+        return Response(
+            {'detail': 'MFA reset completed.'},
+            status=status.HTTP_200_OK,
+        )
+
+
+class VolunteerDeactivationRequestView(APIView):
+    """POST /api/auth/deactivation-request
+
+    FR-V-17: a volunteer may request account deactivation, but the account is
+    not deactivated until staff review and approve the request.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if request.user.role != User.Role.VOLUNTEER:
+            return Response({'detail': 'Forbidden.'}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = VolunteerDeactivationRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        if VolunteerDeactivationRequest.objects.filter(
+            requester=request.user,
+            status=VolunteerDeactivationRequest.Status.PENDING,
+        ).exists():
+            return Response(
+                {'detail': 'A deactivation request is already pending review.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        request_obj = VolunteerDeactivationRequest.objects.create(
+            requester=request.user,
+            reason=serializer.validated_data.get('reason', '').strip(),
+        )
+        record_audit(
+            user=request.user,
+            action='auth.deactivation.requested',
+            target_type='VolunteerDeactivationRequest',
+            target_id=request_obj.pk,
+            request_ip=_get_ip(request),
+        )
+
+        return Response(
+            VolunteerDeactivationRequestReadSerializer(request_obj).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class StaffVolunteerDeactivationRequestListView(APIView):
+    """GET /api/staff/deactivation-requests/
+
+    FR-S-12: staff review queue for volunteer deactivation requests.
+    Defaults to pending requests; pass ?status=approved or ?status=rejected to
+    inspect resolved history.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if request.user.role != User.Role.STAFF:
+            return Response({'detail': 'Forbidden.'}, status=status.HTTP_403_FORBIDDEN)
+
+        status_param = request.query_params.get(
+            'status',
+            VolunteerDeactivationRequest.Status.PENDING,
+        )
+        if status_param not in VolunteerDeactivationRequest.Status.values:
+            return Response(
+                {
+                    'status': (
+                        'Invalid status. Choose from: '
+                        f'{", ".join(VolunteerDeactivationRequest.Status.values)}.'
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        qs = (
+            VolunteerDeactivationRequest.objects
+            .filter(status=status_param)
+            .select_related('requester', 'reviewed_by')
+            .order_by('-created_at')
+        )
+        count = qs.count()
+        record_audit(
+            user=request.user,
+            action='auth.deactivation.list',
+            target_type='VolunteerDeactivationRequest',
+            target_id=f'status={status_param},count={count}',
+            request_ip=_get_ip(request),
+        )
+
+        paginator = _StandardPagination()
+        page = paginator.paginate_queryset(qs, request)
+        return paginator.get_paginated_response(
+            VolunteerDeactivationRequestReadSerializer(page, many=True).data
+        )
+
+
+class StaffVolunteerDeactivationRequestResolveView(APIView):
+    """POST /api/staff/deactivation-requests/<id>/resolve/
+
+    Approval deactivates the volunteer account, ends their non-ended matches,
+    and cancels active/upcoming sessions in the same transaction.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk: int):
+        if request.user.role != User.Role.STAFF:
+            return Response({'detail': 'Forbidden.'}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = VolunteerDeactivationResolveSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        decision = serializer.validated_data['decision']
+        staff_note = serializer.validated_data.get('staff_note', '').strip()
+
+        with transaction.atomic():
+            try:
+                request_obj = (
+                    VolunteerDeactivationRequest.objects
+                    .select_related('requester')
+                    .select_for_update()
+                    .get(pk=pk)
+                )
+            except VolunteerDeactivationRequest.DoesNotExist:
+                return Response(
+                    {'detail': 'Deactivation request not found.'},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
+            if request_obj.status != VolunteerDeactivationRequest.Status.PENDING:
+                return Response(
+                    {'detail': 'Deactivation request has already been resolved.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            now = timezone.now()
+            target_user = request_obj.requester
+            cancelled_sessions = 0
+            ended_matches = 0
+
+            request_obj.reviewed_by = request.user
+            request_obj.reviewed_at = now
+            request_obj.staff_note = staff_note
+
+            if decision == 'approve':
+                request_obj.status = VolunteerDeactivationRequest.Status.APPROVED
+                target_user.is_active = False
+                target_user.save(update_fields=['is_active'])
+
+                ended_matches = (
+                    Match.objects
+                    .filter(volunteer=target_user)
+                    .exclude(status=Match.Status.ENDED)
+                    .update(status=Match.Status.ENDED, ended_at=now)
+                )
+
+                cancelled_sessions = (
+                    Session.objects
+                    .filter(
+                        match__volunteer=target_user,
+                        status__in=[
+                            Session.Status.PENDING_CONFIRMATION,
+                            Session.Status.CONFIRMED,
+                            Session.Status.IN_PROGRESS,
+                        ],
+                    )
+                    .update(
+                        status=Session.Status.CANCELLED,
+                        cancel_reason='Volunteer account deactivation approved.',
+                    )
+                )
+                audit_action = 'auth.deactivation.approved'
+            else:
+                request_obj.status = VolunteerDeactivationRequest.Status.REJECTED
+                audit_action = 'auth.deactivation.rejected'
+
+            request_obj.save(
+                update_fields=['status', 'reviewed_by', 'reviewed_at', 'staff_note']
+            )
+
+            record_audit(
+                user=request.user,
+                action=audit_action,
+                target_type='VolunteerDeactivationRequest',
+                target_id=request_obj.pk,
+                metadata={
+                    'target_user_id': target_user.pk,
+                    'cancelled_session_count': cancelled_sessions,
+                    'ended_match_count': ended_matches,
+                },
+                request_ip=_get_ip(request),
+            )
+
+        return Response(VolunteerDeactivationRequestReadSerializer(request_obj).data)
+
+
+# ---------------------------------------------------------------------------
 # Register & email verification (unchanged)
 # ---------------------------------------------------------------------------
 
@@ -607,6 +1055,7 @@ class RegisterView(APIView):
     """POST /api/auth/register"""
 
     permission_classes = [AllowAny]
+    throttle_classes = [RegistrationRateThrottle]
 
     def post(self, request):
         serializer = RegisterSerializer(data=request.data)
@@ -649,18 +1098,86 @@ def _issue_and_send_verification_token(user: User) -> None:
 
     verify_url = f'{settings.FRONTEND_BASE_URL}/verify-email?token={raw_token}'
 
-    send_mail(
-        subject='Verify your KakiCare email address',
-        message=(
-            f'Hi {user.full_name},\n\n'
-            f'Please verify your email address by clicking the link below.\n'
-            f'The link expires in {_TOKEN_EXPIRY_HOURS} hours.\n\n'
-            f'{verify_url}\n\n'
-            f'If you did not register for KakiCare, you can ignore this email.'
-        ),
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        recipient_list=[user.email],
-    )
+    # Best-effort: a transient SMTP failure must not 500 registration. The user
+    # row already exists; an unverified user can be re-sent a link later.
+    try:
+        send_mail(
+            subject='Verify your KakiCare email address',
+            message=(
+                f'Hi {user.full_name},\n\n'
+                f'Please verify your email address by clicking the link below.\n'
+                f'The link expires in {_TOKEN_EXPIRY_HOURS} hours.\n\n'
+                f'{verify_url}\n\n'
+                f'If you did not register for KakiCare, you can ignore this email.'
+            ),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            fail_silently=False,
+        )
+    except Exception:
+        logger.exception('Failed to send verification email to %s', user.email)
+
+
+class ResendVerificationView(APIView):
+    """POST /api/auth/resend-verification
+
+    Re-sends the email-verification link to an account that has registered but
+    not yet verified. This is the self-service recovery path for a lost/expired
+    verification email — without it a volunteer whose first email never arrived
+    is permanently stuck (login is refused while unverified, and re-registering
+    is a no-op because the email already exists).
+
+    SR-AUTH-06 (anti-enumeration): the response is identical whether or not the
+    email maps to an unverified account, exactly like password-reset/request, so
+    the endpoint cannot be used to probe which addresses are registered or which
+    are already verified.
+    """
+
+    permission_classes = [AllowAny]
+    throttle_classes = [ResendVerificationRateThrottle]
+
+    def post(self, request):
+        # Single generic response — never branch on account existence/state.
+        generic_ok = Response(
+            {'detail': 'If this email needs verification, a new link has been sent.'},
+            status=status.HTTP_200_OK,
+        )
+
+        serializer = ResendVerificationSerializer(data=request.data)
+        if not serializer.is_valid():
+            return generic_ok
+
+        email = serializer.validated_data['email']
+
+        # Only unverified, active accounts are eligible. Already-verified or
+        # nonexistent emails fall through to the same generic response.
+        try:
+            user = User.objects.get(
+                email=email, is_active=True, is_email_verified=False
+            )
+        except User.DoesNotExist:
+            return generic_ok
+
+        # Expire any outstanding verification tokens before issuing a new one so
+        # the inbox never accumulates multiple live links (mirrors password-reset).
+        user.email_verification_tokens.filter(used_at__isnull=True).update(
+            used_at=timezone.now()
+        )
+
+        # Guard the send: a prod SMTP failure must not surface as a 500 (which
+        # would also leak that the email is a real unverified account). The token
+        # is issued regardless; the user can retry the resend.
+        try:
+            _issue_and_send_verification_token(user)
+        except Exception:
+            logger.exception(
+                'Failed to send verification email on resend for user %s', user.pk
+            )
+
+        record_audit(
+            user=user, action='auth.email.resend', request_ip=_get_ip(request)
+        )
+        return generic_ok
 
 
 def issue_and_send_staff_invite(user: User) -> None:
@@ -691,19 +1208,26 @@ def issue_and_send_staff_invite(user: User) -> None:
     # logged in yet when they click this link.
     invite_url = f'{settings.FRONTEND_BASE_URL}/accept-invite?token={raw_token}'
 
-    send_mail(
-        subject='You have been invited to KakiCare',
-        message=(
-            f'Hi {user.full_name},\n\n'
-            f'A KakiCare administrator has created a staff account for you. '
-            f'Click the link below to set your password and activate your account. '
-            f'The link expires in {_STAFF_INVITE_EXPIRY_HOURS} hours.\n\n'
-            f'{invite_url}\n\n'
-            f'If you were not expecting this invitation, you can ignore this email.'
-        ),
-        from_email=settings.DEFAULT_FROM_EMAIL,
-        recipient_list=[user.email],
-    )
+    # Best-effort: a transient SMTP failure must not raise out of the admin
+    # save_model (which would 500 the admin page). The token is already stored, so
+    # the admin can use the "Resend staff invite" action to retry delivery.
+    try:
+        send_mail(
+            subject='You have been invited to KakiCare',
+            message=(
+                f'Hi {user.full_name},\n\n'
+                f'A KakiCare administrator has created a staff account for you. '
+                f'Click the link below to set your password and activate your account. '
+                f'The link expires in {_STAFF_INVITE_EXPIRY_HOURS} hours.\n\n'
+                f'{invite_url}\n\n'
+                f'If you were not expecting this invitation, you can ignore this email.'
+            ),
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            fail_silently=False,
+        )
+    except Exception:
+        logger.exception('Failed to send staff-invite email to %s', user.email)
 
 
 class AcceptInviteView(APIView):
@@ -823,3 +1347,135 @@ class VerifyEmailView(APIView):
             {'detail': 'Email verified successfully.'},
             status=status.HTTP_200_OK,
         )
+
+
+class ContactView(APIView):
+    """POST /api/auth/contact
+
+    Public landing-page contact form. Sends the message straight to the
+    KakiCare contact inbox, with the visitor's address set as Reply-To so
+    staff can reply directly from their email client.
+    """
+
+    permission_classes = [AllowAny]
+    throttle_classes = [ContactRateThrottle]
+
+    def post(self, request):
+        serializer = ContactSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        name = serializer.validated_data['name']
+        email = serializer.validated_data['email']
+        message = serializer.validated_data['message']
+
+        try:
+            EmailMessage(
+                subject=f'KakiCare contact form message from {name}',
+                body=f'From: {name} <{email}>\n\n{message}',
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                to=[settings.CONTACT_EMAIL],
+                reply_to=[email],
+            ).send(fail_silently=False)
+        except Exception:
+            logger.exception('Failed to send contact-form email from %s', email)
+            return Response(
+                {'detail': 'Could not send your message. Please try again later.'},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        return Response(
+            {'detail': 'Your message has been sent.'},
+            status=status.HTTP_200_OK,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Account settings
+# ---------------------------------------------------------------------------
+
+class ChangePasswordView(APIView):
+    """POST /api/auth/change-password
+
+    Authenticated users change their own password by supplying their current
+    password and a new one. Changing the password invalidates all other active
+    sessions via Django's built-in session auth hash mechanism.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = ChangePasswordSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        current_password = serializer.validated_data['current_password']
+        new_password = serializer.validated_data['new_password']
+
+        if not request.user.check_password(current_password):
+            return Response(
+                {'current_password': ['Incorrect password.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if current_password == new_password:
+            return Response(
+                {'new_password': ['New password must differ from your current password.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            validate_password(new_password, user=request.user)
+        except DjangoValidationError as exc:
+            return Response(
+                {'new_password': list(exc.messages)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        request.user.set_password(new_password)
+        request.user.save(update_fields=['password'])
+        record_audit(user=request.user, action='auth.password.changed', request_ip=_get_ip(request))
+
+        # Re-authenticate so the current session remains valid after the
+        # password change (other sessions are invalidated automatically).
+        auth.update_session_auth_hash(request, request.user)
+
+        return Response({'detail': 'Password changed successfully.'}, status=status.HTTP_200_OK)
+
+
+class MFAStatusView(APIView):
+    """GET /api/auth/mfa/status
+
+    Returns whether the authenticated user has a confirmed TOTP device enrolled.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        enrolled = EncryptedTOTPDevice.objects.filter(
+            user=request.user, confirmed=True
+        ).exists()
+        return Response({'enrolled': enrolled})
+
+
+class MFADisableView(APIView):
+    """POST /api/auth/mfa/disable
+
+    Allows volunteers to disable MFA by removing their confirmed TOTP device
+    and backup codes. Staff MFA is mandatory and cannot be disabled here.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if request.user.role == User.Role.STAFF:
+            return Response(
+                {'detail': 'MFA cannot be disabled for staff accounts.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        EncryptedTOTPDevice.objects.filter(user=request.user).delete()
+        request.user.mfa_backup_codes.all().delete()
+        record_audit(user=request.user, action='auth.mfa.disabled', request_ip=_get_ip(request))
+
+        return Response({'detail': 'MFA disabled successfully.'}, status=status.HTTP_200_OK)
