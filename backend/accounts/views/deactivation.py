@@ -18,6 +18,7 @@ from ..serializers import (
     VolunteerDeactivationRequestSerializer,
     VolunteerDeactivationResolveSerializer,
 )
+from ..sessions import invalidate_user_sessions
 from ._common import _get_ip
 
 
@@ -167,6 +168,7 @@ class StaffVolunteerDeactivationRequestResolveView(APIView):
                 request_obj.status = VolunteerDeactivationRequest.Status.APPROVED
                 target_user.is_active = False
                 target_user.save(update_fields=['is_active'])
+                invalidate_user_sessions(target_user.pk)
 
                 ended_matches = (
                     Match.objects
