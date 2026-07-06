@@ -11,12 +11,15 @@ Covers the controls described in Report II §3.3 (Secure Login):
 import re
 from datetime import timedelta
 
+from django.contrib.admin.sites import AdminSite
+from django.contrib.messages.storage.cookie import CookieStorage
 from django.core import mail
-from django.test import Client
+from django.test import Client, RequestFactory
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
 
+from accounts.admin import UserAdmin
 from accounts.models import (
     EmailVerificationToken,
     MFAResetRequest,
@@ -517,6 +520,31 @@ class VolunteerDeactivationFlowTests(KakiCareAPITestCase):
         self.assertEqual(audit.metadata['cancelled_session_count'], 3)
         self.assertEqual(audit.metadata['ended_match_count'], 1)
 
+    def test_staff_approval_ends_the_volunteers_live_session(self):
+        # Log the volunteer in on their own client before deactivation.
+        session_client = APIClient()
+        session_client.post(
+            reverse('auth-login'),
+            {'email': self.volunteer.email, 'password': DEFAULT_PASSWORD},
+        )
+        self.assertEqual(session_client.get(reverse('auth-me')).status_code, 200)
+
+        request_obj = VolunteerDeactivationRequest.objects.create(
+            requester=self.volunteer,
+            reason='Please close my account.',
+        )
+        self.client.force_authenticate(user=self.staff)
+        resp = self.client.post(
+            self._resolve_url(request_obj),
+            {'decision': 'approve'},
+        )
+
+        self.assertEqual(resp.status_code, 200)
+        # DRF's SessionAuthentication rechecks is_active on every request, so
+        # access is cut immediately regardless of the session row itself —
+        # this just confirms that recheck actually fires for this flow.
+        self.assertEqual(session_client.get(reverse('auth-me')).status_code, 401)
+
     def test_resolved_request_cannot_be_resolved_again(self):
         request_obj = VolunteerDeactivationRequest.objects.create(
             requester=self.volunteer,
@@ -820,3 +848,66 @@ class AdminPortalMfaLoginTests(KakiCareAPITestCase):
         # A successful OTP-gated admin login redirects (302) to the admin
         # index. Before the fix this raised a 500 (binascii.Error) instead.
         self.assertEqual(resp.status_code, 302)
+
+
+class UserAdminDeactivationTests(KakiCareAPITestCase):
+    """UserAdmin no longer hard-deletes; is_active is the deactivation path.
+
+    Hard delete used to 500 in production: AuditLogEntry.user is SET_NULL,
+    but audit_auditlogentry has a Postgres trigger blocking all UPDATE/DELETE
+    (audit/migrations/0002_append_only_triggers.py), so the collector's
+    SET_NULL update on any user with audit history raised.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.admin_user = User.objects.create_superuser(
+            email='root-admin@example.com',
+            password=DEFAULT_PASSWORD,
+            full_name='Root Admin',
+        )
+        self.model_admin = UserAdmin(User, AdminSite())
+        self.factory = RequestFactory()
+
+    def _request(self):
+        request = self.factory.post('/manage/portal/accounts/user/')
+        request.user = self.admin_user
+        # save_model() calls self.message_user(), which needs message storage.
+        request._messages = CookieStorage(request)
+        return request
+
+    def test_delete_permission_is_denied(self):
+        self.assertFalse(self.model_admin.has_delete_permission(self._request()))
+
+    def test_deactivating_a_user_ends_their_live_session_and_is_audited(self):
+        target = create_volunteer(email='to-deactivate@example.com')
+        session_client = APIClient()
+        session_client.post(
+            reverse('auth-login'),
+            {'email': target.email, 'password': DEFAULT_PASSWORD},
+        )
+        self.assertEqual(session_client.get(reverse('auth-me')).status_code, 200)
+
+        target.is_active = False
+        self.model_admin.save_model(self._request(), target, form=None, change=True)
+
+        target.refresh_from_db()
+        self.assertFalse(target.is_active)
+        self.assertEqual(session_client.get(reverse('auth-me')).status_code, 401)
+        self.assertTrue(
+            AuditLogEntry.objects.filter(
+                action='accounts.user.deactivated', target_id=str(target.pk)
+            ).exists()
+        )
+
+    def test_reactivating_a_user_is_audited(self):
+        target = create_volunteer(email='to-reactivate@example.com', is_active=False)
+
+        target.is_active = True
+        self.model_admin.save_model(self._request(), target, form=None, change=True)
+
+        self.assertTrue(
+            AuditLogEntry.objects.filter(
+                action='accounts.user.reactivated', target_id=str(target.pk)
+            ).exists()
+        )
