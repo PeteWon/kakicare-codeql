@@ -20,7 +20,6 @@ view that lacks a _audit call. No Senior-data code path exists outside these vie
 import logging
 
 from django.db import transaction
-from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status
 from kakicare.pagination import StandardPagination
@@ -113,7 +112,8 @@ class SeniorListCreateView(_AuditMixin, APIView):
 
     Query parameters for GET:
       ?is_active=true|false   filter by active status (omit for all)
-      ?search=<text>          case-insensitive match on full_name or address
+      ?search=<text>          case-insensitive match on full_name (SR-DATA-05:
+                              address is encrypted at rest and not searchable)
     """
 
     permission_classes = [IsStaff]
@@ -136,9 +136,9 @@ class SeniorListCreateView(_AuditMixin, APIView):
 
         search = request.query_params.get('search', '').strip()
         if search:
-            qs = qs.filter(
-                Q(full_name__icontains=search) | Q(address__icontains=search)
-            )
+            # SR-DATA-05: address is encrypted at rest and therefore not
+            # substring-searchable; search matches on full_name only.
+            qs = qs.filter(full_name__icontains=search)
 
         count = qs.count()
 
