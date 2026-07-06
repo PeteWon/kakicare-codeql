@@ -23,7 +23,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.pagination import PageNumberPagination
+from kakicare.pagination import StandardPagination
 from rest_framework.response import Response
 from rest_framework.throttling import SimpleRateThrottle
 from rest_framework.views import APIView
@@ -88,16 +88,6 @@ class SeniorListThrottle(SimpleRateThrottle):
 
 
 # ---------------------------------------------------------------------------
-# Pagination
-# ---------------------------------------------------------------------------
-
-class _StandardPagination(PageNumberPagination):
-    page_size = 20
-    page_size_query_param = 'page_size'
-    max_page_size = 100
-
-
-# ---------------------------------------------------------------------------
 # Helper
 # ---------------------------------------------------------------------------
 
@@ -157,7 +147,7 @@ class SeniorListCreateView(_AuditMixin, APIView):
         # SR-AUD-03: no Senior field values (address, phone, etc.) are logged.
         self._audit(request, 'senior.list', target_id=f'count={count}')
 
-        paginator = _StandardPagination()
+        paginator = StandardPagination()
         page = paginator.paginate_queryset(qs, request)
         return paginator.get_paginated_response(SeniorSerializer(page, many=True).data)
 

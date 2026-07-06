@@ -8,6 +8,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from audit.services import record_audit
+from kakicare.pagination import StandardPagination
 from matching.models import Match
 from sessions.models import Session
 
@@ -17,7 +18,7 @@ from ..serializers import (
     VolunteerDeactivationRequestSerializer,
     VolunteerDeactivationResolveSerializer,
 )
-from ._common import _StandardPagination, _get_ip
+from ._common import _get_ip
 
 
 class VolunteerDeactivationRequestView(APIView):
@@ -107,7 +108,7 @@ class StaffVolunteerDeactivationRequestListView(APIView):
             request_ip=_get_ip(request),
         )
 
-        paginator = _StandardPagination()
+        paginator = StandardPagination()
         page = paginator.paginate_queryset(qs, request)
         return paginator.get_paginated_response(
             VolunteerDeactivationRequestReadSerializer(page, many=True).data

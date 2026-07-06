@@ -12,7 +12,6 @@ import hashlib
 import logging
 
 from django.contrib.auth.hashers import make_password
-from rest_framework.pagination import PageNumberPagination
 from rest_framework.throttling import SimpleRateThrottle
 
 from audit.services import get_client_ip
@@ -156,9 +155,3 @@ class ContactRateThrottle(SimpleRateThrottle):
 
     def get_cache_key(self, request, view):
         return self.cache_format % {'scope': self.scope, 'ident': self.get_ident(request)}
-
-
-class _StandardPagination(PageNumberPagination):
-    page_size = 20
-    page_size_query_param = 'page_size'
-    max_page_size = 100

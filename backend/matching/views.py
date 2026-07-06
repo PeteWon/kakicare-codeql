@@ -31,7 +31,7 @@ from django.db import IntegrityError, transaction
 from django.http import Http404
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.pagination import PageNumberPagination
+from kakicare.pagination import StandardPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -89,12 +89,6 @@ def _activate_if_ready(match: Match) -> bool:
     return False
 
 
-class _StandardPagination(PageNumberPagination):
-    page_size = 20
-    page_size_query_param = 'page_size'
-    max_page_size = 100
-
-
 # ---------------------------------------------------------------------------
 # Staff views
 # ---------------------------------------------------------------------------
@@ -143,7 +137,7 @@ class StaffMatchListCreateView(_MatchAuditMixin, APIView):
         count = qs.count()
         self._audit(request, 'match.list', target_id=f'count={count}')
 
-        paginator = _StandardPagination()
+        paginator = StandardPagination()
         page = paginator.paginate_queryset(qs, request)
         return paginator.get_paginated_response(MatchStaffSerializer(page, many=True).data)
 
@@ -368,7 +362,7 @@ class VolunteerMatchListView(_MatchAuditMixin, APIView):
             target_id=f'volunteer_id={request.user.pk},count={count}',
         )
 
-        paginator = _StandardPagination()
+        paginator = StandardPagination()
         page = paginator.paginate_queryset(qs, request)
         return paginator.get_paginated_response(
             MatchVolunteerSerializer(page, many=True).data
