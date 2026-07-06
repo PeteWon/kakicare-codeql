@@ -15,9 +15,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from audit.services import record_audit
+from kakicare.pagination import StandardPagination
 
 from ..models import EncryptedTOTPDevice, MFABackupCode, MFAResetRequest, User
 from ..serializers import (
+    MFAResetRequestReadSerializer,
     MFAResetRequestSerializer,
     MFAResetResolveSerializer,
     MFAVerifySerializer,
@@ -336,6 +338,60 @@ class MFAResetRequestView(APIView):
         return Response(self._GENERIC_RESPONSE, status=status.HTTP_200_OK)
 
 
+class StaffMFAResetRequestListView(APIView):
+    """GET /api/staff/mfa-reset/requests/
+
+    Staff review queue for MFA reset requests. Defaults to pending requests;
+    pass ?status=resolved or ?status=rejected to inspect resolved history.
+
+    Authorisation tiering (Report 1 §10.1.2, FR-S-08): non-admin staff only see
+    requests targeting VOLUNTEER accounts. Staff/superuser-target requests are
+    visible only to admin (superuser) actors, mirroring who may resolve them.
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if request.user.role != User.Role.STAFF:
+            return Response({'detail': 'Forbidden.'}, status=status.HTTP_403_FORBIDDEN)
+
+        status_param = request.query_params.get('status', MFAResetRequest.Status.PENDING)
+        if status_param not in MFAResetRequest.Status.values:
+            return Response(
+                {
+                    'status': (
+                        'Invalid status. Choose from: '
+                        f'{", ".join(MFAResetRequest.Status.values)}.'
+                    )
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        qs = (
+            MFAResetRequest.objects
+            .filter(status=status_param)
+            .select_related('requester', 'target_user', 'target_user__volunteer_profile', 'reviewed_by')
+            .order_by('-created_at')
+        )
+        if not request.user.is_superuser:
+            qs = qs.filter(target_user__role=User.Role.VOLUNTEER)
+
+        count = qs.count()
+        record_audit(
+            user=request.user,
+            action='auth.mfa.reset.list',
+            target_type='MFAResetRequest',
+            target_id=f'status={status_param},count={count}',
+            request_ip=_get_ip(request),
+        )
+
+        paginator = StandardPagination()
+        page = paginator.paginate_queryset(qs, request)
+        return paginator.get_paginated_response(
+            MFAResetRequestReadSerializer(page, many=True).data
+        )
+
+
 class MFAResetResolveView(APIView):
     """POST /api/staff/mfa-reset/requests/<id>/resolve
 
@@ -345,6 +401,13 @@ class MFAResetResolveView(APIView):
 
     AC-12 / SR-ADMIN-03: every reset — not just admin fallbacks — must record an
     out-of-band identity-verification method and outcome before it is executed.
+
+    verification_method is one of 'phone_call' / 'video_call' / 'email' /
+    'in_person' — the out-of-band channel used to confirm identity.
+
+    verification_outcome is 'success' or 'failed': 'success' clears the target's
+    MFA and marks the request resolved; 'failed' marks it rejected and leaves
+    the target's MFA untouched.
     """
 
     permission_classes = [IsAuthenticated]
@@ -375,8 +438,8 @@ class MFAResetResolveView(APIView):
 
             target_user = reset_request.target_user
             is_admin_actor = bool(request.user.is_superuser)
-            verification_method = serializer.validated_data.get('verification_method', '').strip()
-            verification_outcome = serializer.validated_data.get('verification_outcome', '').strip()
+            verification_method = serializer.validated_data.get('verification_method', '')
+            verification_outcome = serializer.validated_data.get('verification_outcome', '')
 
             # §10.1.2 / FR-S-08: non-admin staff may reset volunteers only;
             # staff/superuser targets require an admin actor.
@@ -396,14 +459,25 @@ class MFAResetResolveView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            _clear_user_mfa(target_user)
             now = timezone.now()
-            reset_request.status = MFAResetRequest.Status.RESOLVED
             reset_request.reviewed_by = request.user
             reset_request.reviewed_at = now
             reset_request.resolved_at = now
             reset_request.verification_method = verification_method
             reset_request.verification_outcome = verification_outcome
+
+            if verification_outcome == 'failed':
+                # Verification failed: reject the request and leave the
+                # target's MFA untouched.
+                reset_request.status = MFAResetRequest.Status.REJECTED
+                audit_action = 'auth.mfa.reset.rejected'
+                detail = 'MFA reset request rejected — verification did not succeed.'
+            else:
+                _clear_user_mfa(target_user)
+                reset_request.status = MFAResetRequest.Status.RESOLVED
+                audit_action = 'auth.mfa.reset.completed'
+                detail = 'MFA reset completed.'
+
             reset_request.save(
                 update_fields=[
                     'status',
@@ -417,7 +491,7 @@ class MFAResetResolveView(APIView):
 
             record_audit(
                 user=request.user,
-                action='auth.mfa.reset.completed',
+                action=audit_action,
                 target_type='MFAResetRequest',
                 target_id=reset_request.pk,
                 metadata={
@@ -429,7 +503,7 @@ class MFAResetResolveView(APIView):
             )
 
         return Response(
-            {'detail': 'MFA reset completed.'},
+            {'detail': detail},
             status=status.HTTP_200_OK,
         )
 

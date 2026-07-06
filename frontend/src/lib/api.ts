@@ -21,8 +21,10 @@ import type {
   FollowUpOutcome,
   LoginResult,
   MfaResult,
+  MfaResetRequestRecord,
   MfaResetResolvePayload,
   MfaResetRequestResult,
+  MfaResetStatus,
   MfaSetupResult,
   Paginated,
   ProfileDocuments,
@@ -124,6 +126,7 @@ interface MeResponse {
   full_name: string;
   role: UserRole;
   is_email_verified: boolean;
+  is_superuser: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -200,6 +203,7 @@ export const api = {
       // emailVerifiedAt and createdAt are not yet exposed by /api/auth/me.
       emailVerifiedAt: raw.is_email_verified ? 'verified' : null,
       createdAt: '',
+      isSuperuser: raw.is_superuser,
     };
   },
 
@@ -226,6 +230,15 @@ export const api = {
       method: 'POST',
       body: payload,
     });
+  },
+
+  async getMfaResetRequests(
+    status: MfaResetStatus = 'pending',
+  ): Promise<Paginated<MfaResetRequestRecord>> {
+    const qs = new URLSearchParams({ status });
+    return apiFetch<Paginated<MfaResetRequestRecord>>(
+      `/api/staff/mfa-reset/requests/?${qs}`,
+    );
   },
 
   async getDeactivationRequests(

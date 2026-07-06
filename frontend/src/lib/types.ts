@@ -37,9 +37,39 @@ export interface MfaResetRequestResult {
   detail: string;
 }
 
+export type MfaVerificationMethod = 'phone_call' | 'video_call' | 'email' | 'in_person';
+
+export type MfaVerificationOutcome = 'success' | 'failed';
+
 export interface MfaResetResolvePayload {
-  verification_method?: string;
-  verification_outcome?: string;
+  verification_method?: MfaVerificationMethod;
+  verification_outcome?: MfaVerificationOutcome;
+}
+
+export type MfaResetStatus = 'pending' | 'resolved' | 'rejected';
+
+/** Staff-facing queue entry — GET /api/staff/mfa-reset/requests/ */
+export interface MfaResetRequestRecord {
+  id: number;
+  requester: number;
+  requester_email: string;
+  requester_full_name: string;
+  target_user: number;
+  target_user_email: string;
+  target_user_full_name: string;
+  target_user_role: UserRole;
+  /** Volunteers' phone number on file; always '' for staff/admin targets
+   *  (the User model has no phone field for staff). */
+  target_user_phone: string;
+  status: MfaResetStatus;
+  reason: string;
+  verification_method: MfaVerificationMethod | '';
+  verification_outcome: MfaVerificationOutcome | '';
+  reviewed_by: number | null;
+  reviewed_by_email: string | null;
+  reviewed_at: ISODateString | null;
+  resolved_at: ISODateString | null;
+  created_at: ISODateString;
 }
 
 export type DeactivationRequestStatus = 'pending' | 'approved' | 'rejected';
@@ -110,6 +140,11 @@ export interface User {
   /** Set once the user has confirmed their email address. */
   emailVerifiedAt: ISODateString | null;
   createdAt: ISODateString;
+  /** Django superuser flag. Admins are staff members with this set — there is
+   *  no separate 'admin' role. Gates admin-only UI, e.g. staff-target MFA
+   *  reset requests. The backend independently re-enforces this on every
+   *  admin-only endpoint (client-side gating is a convenience only). */
+  isSuperuser: boolean;
 }
 
 /** Lifecycle of a volunteer application/account, vetted by staff. */

@@ -1,145 +1,270 @@
 // SECURITY NOTES:
-// - Staff can action MFA reset requests from here.
+// - Staff can view and action MFA reset requests from here.
 // - Every reset requires an out-of-band verification method and outcome
 //   (AC-12 / SR-ADMIN-03); the backend enforces this, and this page captures it.
 // - Non-admin staff may only resolve VOLUNTEER resets; staff/admin targets are
-//   rejected by the backend (Report 1 §10.1.2).
+//   rejected by the backend (Report 1 §10.1.2). The backend also filters the
+//   list itself, so non-admin staff never see staff-target requests at all.
 // - The page is staff-only via ProtectedRoute, but the backend remains
-//   authoritative for role checks and request resolution.
+//   authoritative for role checks, list scoping, and request resolution.
 
-import { useState } from 'react';
-import type { FormEvent } from 'react';
-import { Button, Card, TextField } from '@/components';
+import { useEffect, useState } from 'react';
+import { Button, Card } from '@/components';
 import { api, ApiError } from '@/lib/api';
+import type {
+  MfaResetRequestRecord,
+  MfaResetStatus,
+  MfaVerificationMethod,
+  MfaVerificationOutcome,
+} from '@/lib/types';
 import { usePageTitle } from '@/lib/usePageTitle';
+
+const STATUS_OPTIONS: MfaResetStatus[] = ['pending', 'resolved', 'rejected'];
+const METHOD_OPTIONS: { value: MfaVerificationMethod; label: string }[] = [
+  { value: 'phone_call', label: 'Phone call' },
+  { value: 'video_call', label: 'Video call' },
+  { value: 'email', label: 'Confirmed via email' },
+  { value: 'in_person', label: 'In person' },
+];
+const OUTCOME_OPTIONS: { value: MfaVerificationOutcome; label: string }[] = [
+  { value: 'success', label: 'Success — identity confirmed' },
+  { value: 'failed', label: 'Failed — identity not confirmed' },
+];
+
+function formatDateTime(iso: string): string {
+  return new Intl.DateTimeFormat('en-SG', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(iso));
+}
 
 export function MfaResetRequests() {
   usePageTitle('MFA resets');
 
-  const [requestId, setRequestId] = useState('');
-  const [verificationMethod, setVerificationMethod] = useState('');
-  const [verificationOutcome, setVerificationOutcome] = useState('');
-  const [requestIdError, setRequestIdError] = useState<string | null>(null);
-  const [methodError, setMethodError] = useState<string | null>(null);
-  const [outcomeError, setOutcomeError] = useState<string | null>(null);
-  const [formError, setFormError] = useState<string | null>(null);
-  const [resultMessage, setResultMessage] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [status, setStatus] = useState<MfaResetStatus>('pending');
+  const [requests, setRequests] = useState<MfaResetRequestRecord[]>([]);
+  const [count, setCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [listError, setListError] = useState<string | null>(null);
+  const [rowError, setRowError] = useState<Record<number, string>>({});
+  const [methods, setMethods] = useState<Record<number, MfaVerificationMethod | ''>>({});
+  const [outcomes, setOutcomes] = useState<Record<number, MfaVerificationOutcome | ''>>({});
+  const [resolvingId, setResolvingId] = useState<number | null>(null);
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    setFormError(null);
-    setResultMessage(null);
-
-    const requestIdNum = Number(requestId);
-    const requestIdErr = !requestId || Number.isNaN(requestIdNum) || requestIdNum <= 0
-      ? 'Enter a valid request ID.'
-      : null;
-    // AC-12 / SR-ADMIN-03: out-of-band verification is required for every reset,
-    // so both fields are mandatory here (the backend also enforces this).
-    const methodErr = verificationMethod.trim() ? null : 'Record the verification method used.';
-    const outcomeErr = verificationOutcome.trim() ? null : 'Record the verification outcome.';
-    setRequestIdError(requestIdErr);
-    setMethodError(methodErr);
-    setOutcomeError(outcomeErr);
-    if (requestIdErr || methodErr || outcomeErr) return;
-
-    setSubmitting(true);
+  async function loadRequests(nextStatus = status) {
+    setLoading(true);
+    setListError(null);
     try {
-      const response = await api.resolveMfaReset(requestIdNum, {
-        verification_method: verificationMethod.trim(),
-        verification_outcome: verificationOutcome.trim(),
+      const data = await api.getMfaResetRequests(nextStatus);
+      setRequests(data.results);
+      setCount(data.count);
+    } catch {
+      setListError('Could not load MFA reset requests.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadRequests(status);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]);
+
+  async function handleResolve(request: MfaResetRequestRecord) {
+    const method = methods[request.id] ?? '';
+    const outcome = outcomes[request.id] ?? '';
+    if (!method || !outcome) {
+      setRowError((prev) => ({
+        ...prev,
+        [request.id]: 'Select both the verification method and outcome.',
+      }));
+      return;
+    }
+
+    setResolvingId(request.id);
+    setRowError((prev) => ({ ...prev, [request.id]: '' }));
+    try {
+      await api.resolveMfaReset(request.id, {
+        verification_method: method,
+        verification_outcome: outcome,
       });
-      setResultMessage(response.detail);
-      setRequestId('');
-      setVerificationMethod('');
-      setVerificationOutcome('');
+      await loadRequests(status);
     } catch (err) {
+      let message = 'Something went wrong. Please try again.';
       if (err instanceof ApiError) {
         if (err.status === 400) {
-          setFormError('This reset could not be completed. Check the request ID and required verification details.');
+          message = 'This reset could not be completed. Check the required verification details.';
         } else if (err.status === 403) {
-          setFormError('You do not have permission to resolve this request.');
+          message = 'You do not have permission to resolve this request.';
         } else if (err.status === 404) {
-          setFormError('That reset request was not found.');
-        } else {
-          setFormError('Something went wrong. Please try again.');
+          message = 'That reset request was not found.';
         }
-      } else {
-        setFormError('Something went wrong. Please try again.');
       }
+      setRowError((prev) => ({ ...prev, [request.id]: message }));
     } finally {
-      setSubmitting(false);
+      setResolvingId(null);
     }
   }
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="font-serif text-2xl font-semibold text-primary-900">MFA resets</h1>
-        <p className="mt-1 text-sm text-primary-500">
-          Resolve lost-authenticator requests. Out-of-band identity verification is required for every reset — record the method and outcome before resolving.
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h1 className="font-serif text-2xl font-semibold text-primary-900">MFA resets</h1>
+          <p className="mt-1 text-sm text-primary-500">
+            Review and resolve lost-authenticator requests. Out-of-band identity verification
+            is required for every reset.
+          </p>
+        </div>
+
+        <label className="block text-sm font-medium text-primary-800">
+          Status
+          <select
+            value={status}
+            onChange={(e) => setStatus(e.target.value as MfaResetStatus)}
+            className="mt-1 block rounded-xl border border-cream-300 bg-white px-3 py-2 text-sm text-primary-900 shadow-sm outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
+          >
+            {STATUS_OPTIONS.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
 
-      <Card className="max-w-2xl space-y-4">
-        {resultMessage ? (
-          <div className="rounded-xl border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-700">
-            {resultMessage}
-          </div>
-        ) : null}
+      {listError && (
+        <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          {listError}
+        </div>
+      )}
 
-        {formError ? (
-          <div
-            role="alert"
-            className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
-          >
-            {formError}
-          </div>
-        ) : null}
+      <Card className="overflow-hidden p-0">
+        <div className="border-b border-cream-200 px-4 py-3 text-sm text-primary-600">
+          {loading ? 'Loading...' : `${count} request${count === 1 ? '' : 's'}`}
+        </div>
 
-        <form className="space-y-4" onSubmit={handleSubmit} noValidate>
-          <TextField
-            label="Reset request ID"
-            name="requestId"
-            inputMode="numeric"
-            value={requestId}
-            error={requestIdError}
-            hint="Use the request reference provided by the user or from your case notes."
-            onChange={(e) => {
-              setRequestId(e.target.value.replace(/\D/g, '').slice(0, 10));
-              setRequestIdError(null);
-            }}
-          />
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-cream-200 text-sm">
+            <thead className="bg-cream-50 text-left text-xs font-semibold uppercase tracking-wide text-primary-500">
+              <tr>
+                <th className="px-4 py-3">Account</th>
+                <th className="px-4 py-3">Requested</th>
+                <th className="px-4 py-3">Review</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-cream-100 bg-white">
+              {!loading && requests.length === 0 && (
+                <tr>
+                  <td colSpan={3} className="px-4 py-6 text-center text-primary-500">
+                    No requests found.
+                  </td>
+                </tr>
+              )}
 
-          <TextField
-            label="Verification method"
-            name="verificationMethod"
-            value={verificationMethod}
-            error={methodError}
-            hint="Required; e.g. phone callback, in-person ID check."
-            onChange={(e) => {
-              setVerificationMethod(e.target.value);
-              setMethodError(null);
-            }}
-          />
-
-          <TextField
-            label="Verification outcome"
-            name="verificationOutcome"
-            value={verificationOutcome}
-            error={outcomeError}
-            hint="Required; e.g. identity matched, failed verification."
-            onChange={(e) => {
-              setVerificationOutcome(e.target.value);
-              setOutcomeError(null);
-            }}
-          />
-
-          <Button type="submit" disabled={submitting}>
-            {submitting ? 'Resolving…' : 'Resolve MFA reset'}
-          </Button>
-        </form>
+              {requests.map((request) => (
+                <tr key={request.id} className="align-top">
+                  <td className="px-4 py-4">
+                    <p className="font-medium text-primary-900">{request.target_user_full_name}</p>
+                    <p className="text-primary-500">{request.target_user_email}</p>
+                    {request.target_user_phone && (
+                      <p className="text-primary-500">{request.target_user_phone}</p>
+                    )}
+                    <p className="mt-1 text-xs uppercase tracking-wide text-primary-400">
+                      {request.target_user_role}
+                    </p>
+                    <p className="mt-1 text-xs text-primary-400">Request #{request.id}</p>
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-4 text-primary-600">
+                    {formatDateTime(request.created_at)}
+                  </td>
+                  <td className="min-w-[280px] px-4 py-4">
+                    {request.status === 'pending' ? (
+                      <div className="space-y-3">
+                        {rowError[request.id] && (
+                          <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                            {rowError[request.id]}
+                          </div>
+                        )}
+                        <label className="block text-sm font-medium text-primary-800">
+                          Verification method
+                          <select
+                            value={methods[request.id] ?? ''}
+                            onChange={(e) =>
+                              setMethods((prev) => ({
+                                ...prev,
+                                [request.id]: e.target.value as MfaVerificationMethod | '',
+                              }))
+                            }
+                            className="mt-1 block w-full rounded-xl border border-cream-300 bg-white px-3 py-2 text-sm text-primary-900 shadow-sm outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
+                          >
+                            <option value="">How was identity confirmed?</option>
+                            {METHOD_OPTIONS.map((m) => (
+                              <option key={m.value} value={m.value}>
+                                {m.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="block text-sm font-medium text-primary-800">
+                          Verification outcome
+                          <select
+                            value={outcomes[request.id] ?? ''}
+                            onChange={(e) =>
+                              setOutcomes((prev) => ({
+                                ...prev,
+                                [request.id]: e.target.value as MfaVerificationOutcome | '',
+                              }))
+                            }
+                            className="mt-1 block w-full rounded-xl border border-cream-300 bg-white px-3 py-2 text-sm text-primary-900 shadow-sm outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
+                          >
+                            <option value="">Select an outcome…</option>
+                            {OUTCOME_OPTIONS.map((o) => (
+                              <option key={o.value} value={o.value}>
+                                {o.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <p className="text-xs text-primary-500">
+                          Choosing &quot;Failed&quot; rejects this request and leaves the
+                          account&apos;s MFA untouched.
+                        </p>
+                        <Button
+                          size="sm"
+                          disabled={resolvingId === request.id}
+                          onClick={() => void handleResolve(request)}
+                        >
+                          {resolvingId === request.id ? 'Resolving…' : 'Resolve MFA reset'}
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="space-y-1 text-primary-600">
+                        <p className="font-medium capitalize text-primary-800">{request.status}</p>
+                        {request.resolved_at && <p>{formatDateTime(request.resolved_at)}</p>}
+                        {request.reviewed_by_email && <p>{request.reviewed_by_email}</p>}
+                        {request.verification_method && (
+                          <p className="text-primary-500">
+                            Method:{' '}
+                            {METHOD_OPTIONS.find((m) => m.value === request.verification_method)
+                              ?.label ?? request.verification_method}
+                          </p>
+                        )}
+                        {request.verification_outcome && (
+                          <p className="text-primary-500">
+                            Outcome:{' '}
+                            {OUTCOME_OPTIONS.find((o) => o.value === request.verification_outcome)
+                              ?.label ?? request.verification_outcome}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </Card>
     </div>
   );

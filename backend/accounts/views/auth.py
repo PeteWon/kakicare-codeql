@@ -123,4 +123,5 @@ class MeView(APIView):
             'full_name': u.full_name,
             'role': u.role,
             'is_email_verified': u.is_email_verified,
+            'is_superuser': u.is_superuser,
         })

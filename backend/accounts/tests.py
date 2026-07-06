@@ -40,6 +40,7 @@ from kakicare.test_utils import (
     create_staff,
     create_approved_volunteer,
     create_volunteer,
+    create_volunteer_profile,
     current_totp,
 )
 from audit.models import AuditLogEntry
@@ -280,20 +281,107 @@ class MFAResetFlowTests(KakiCareAPITestCase):
         resp = self.client.post(
             reverse(self.resolve_url_template, args=[request_obj.pk]),
             {
-                'verification_method': 'phone callback to registered number',
-                'verification_outcome': 'identity matched',
+                'verification_method': 'phone_call',
+                'verification_outcome': 'success',
             },
         )
         self.assertEqual(resp.status_code, 200)
 
         request_obj.refresh_from_db()
         self.assertEqual(request_obj.status, MFAResetRequest.Status.RESOLVED)
-        self.assertEqual(request_obj.verification_method, 'phone callback to registered number')
+        self.assertEqual(request_obj.verification_method, 'phone_call')
         self.assertFalse(device.__class__.objects.filter(user=self.volunteer).exists())
         self.assertEqual(self.volunteer.mfa_backup_codes.filter(used_at__isnull=True).count(), 0)
         self.assertTrue(
             AuditLogEntry.objects.filter(action='auth.mfa.reset.completed', target_id=str(request_obj.pk)).exists()
         )
+
+    def test_failed_verification_rejects_request_and_leaves_mfa_intact(self):
+        device = add_confirmed_totp_device(self.volunteer)
+        request_obj = MFAResetRequest.objects.create(
+            requester=self.volunteer,
+            target_user=self.volunteer,
+            reason='lost_authenticator',
+        )
+
+        self.client.force_authenticate(user=self.staff)
+        resp = self.client.post(
+            reverse(self.resolve_url_template, args=[request_obj.pk]),
+            {
+                'verification_method': 'phone_call',
+                'verification_outcome': 'failed',
+            },
+        )
+        self.assertEqual(resp.status_code, 200)
+
+        request_obj.refresh_from_db()
+        self.assertEqual(request_obj.status, MFAResetRequest.Status.REJECTED)
+        # A failed verification must NOT clear the target's MFA device.
+        self.assertTrue(device.__class__.objects.filter(user=self.volunteer).exists())
+        self.assertTrue(
+            AuditLogEntry.objects.filter(action='auth.mfa.reset.rejected', target_id=str(request_obj.pk)).exists()
+        )
+
+    def test_invalid_verification_outcome_choice_is_rejected(self):
+        request_obj = MFAResetRequest.objects.create(
+            requester=self.volunteer,
+            target_user=self.volunteer,
+            reason='lost_authenticator',
+        )
+        self.client.force_authenticate(user=self.staff)
+        resp = self.client.post(
+            reverse(self.resolve_url_template, args=[request_obj.pk]),
+            {'verification_method': 'phone_call', 'verification_outcome': 'identity matched'},
+        )
+        self.assertEqual(resp.status_code, 400)
+        request_obj.refresh_from_db()
+        self.assertEqual(request_obj.status, MFAResetRequest.Status.PENDING)
+
+    def test_invalid_verification_method_choice_is_rejected(self):
+        request_obj = MFAResetRequest.objects.create(
+            requester=self.volunteer,
+            target_user=self.volunteer,
+            reason='lost_authenticator',
+        )
+        self.client.force_authenticate(user=self.staff)
+        resp = self.client.post(
+            reverse(self.resolve_url_template, args=[request_obj.pk]),
+            {'verification_method': 'carrier pigeon', 'verification_outcome': 'success'},
+        )
+        self.assertEqual(resp.status_code, 400)
+        request_obj.refresh_from_db()
+        self.assertEqual(request_obj.status, MFAResetRequest.Status.PENDING)
+
+    def test_list_view_scopes_by_admin_and_includes_volunteer_phone(self):
+        create_volunteer_profile(self.volunteer)
+        volunteer_request = MFAResetRequest.objects.create(
+            requester=self.volunteer,
+            target_user=self.volunteer,
+            reason='lost_authenticator',
+        )
+        target_staff = create_staff(email='peer-staff-2@example.com')
+        staff_request = MFAResetRequest.objects.create(
+            requester=target_staff,
+            target_user=target_staff,
+            reason='lost_authenticator',
+        )
+        list_url = reverse('staff-mfa-reset-request-list')
+
+        self.client.force_authenticate(user=self.staff)
+        as_staff = self.client.get(list_url)
+        self.assertEqual(as_staff.status_code, 200)
+        staff_ids = {row['id'] for row in as_staff.data['results']}
+        self.assertEqual(staff_ids, {volunteer_request.pk})
+        volunteer_row = as_staff.data['results'][0]
+        self.assertEqual(volunteer_row['target_user_phone'], '+6591234567')
+
+        self.client.force_authenticate(user=self.superuser)
+        as_admin = self.client.get(list_url)
+        self.assertEqual(as_admin.status_code, 200)
+        admin_ids = {row['id'] for row in as_admin.data['results']}
+        self.assertEqual(admin_ids, {volunteer_request.pk, staff_request.pk})
+        staff_row = next(row for row in as_admin.data['results'] if row['id'] == staff_request.pk)
+        self.assertEqual(staff_row['target_user_phone'], '')
 
     def test_staff_resolve_requires_verification_details(self):
         request_obj = MFAResetRequest.objects.create(
@@ -320,7 +408,7 @@ class MFAResetFlowTests(KakiCareAPITestCase):
         self.client.force_authenticate(user=self.staff)
         resp = self.client.post(
             reverse(self.resolve_url_template, args=[request_obj.pk]),
-            {'verification_method': 'phone callback', 'verification_outcome': 'identity matched'},
+            {'verification_method': 'phone_call', 'verification_outcome': 'success'},
         )
         self.assertEqual(resp.status_code, 403)
         request_obj.refresh_from_db()
@@ -342,19 +430,19 @@ class MFAResetFlowTests(KakiCareAPITestCase):
         ok = self.client.post(
             reverse(self.resolve_url_template, args=[request_obj.pk]),
             {
-                'verification_method': 'phone callback to registered number',
-                'verification_outcome': 'identity matched',
+                'verification_method': 'phone_call',
+                'verification_outcome': 'success',
             },
         )
         self.assertEqual(ok.status_code, 200)
 
         request_obj.refresh_from_db()
         self.assertEqual(request_obj.reviewed_by, self.superuser)
-        self.assertEqual(request_obj.verification_method, 'phone callback to registered number')
-        self.assertEqual(request_obj.verification_outcome, 'identity matched')
+        self.assertEqual(request_obj.verification_method, 'phone_call')
+        self.assertEqual(request_obj.verification_outcome, 'success')
         audit = AuditLogEntry.objects.get(action='auth.mfa.reset.completed', target_id=str(request_obj.pk))
-        self.assertEqual(audit.metadata['verification_method'], 'phone callback to registered number')
-        self.assertEqual(audit.metadata['verification_outcome'], 'identity matched')
+        self.assertEqual(audit.metadata['verification_method'], 'phone_call')
+        self.assertEqual(audit.metadata['verification_outcome'], 'success')
 
 
 class VolunteerDeactivationFlowTests(KakiCareAPITestCase):
