@@ -19,7 +19,7 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from volunteers.permissions import IsStaff
+from accounts.permissions import IsStaff
 
 from .models import AuditLogEntry
 from .serializers import AuditLogEntrySerializer

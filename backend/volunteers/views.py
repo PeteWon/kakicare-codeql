@@ -27,12 +27,12 @@ from django.core.mail import send_mail
 from django.http import FileResponse, Http404
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.pagination import PageNumberPagination
+from kakicare.pagination import StandardPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import VolunteerDocument, VolunteerProfile
-from .permissions import IsStaff, IsVolunteer
+from accounts.permissions import IsStaff, IsVolunteer
 from .serializers import (
     ApplicationDecisionSerializer,
     DocumentUploadSerializer,
@@ -101,16 +101,6 @@ def _is_profile_complete(profile: VolunteerProfile) -> bool:
         and profile.travel_areas    # non-empty list
         and profile.availability    # non-empty dict
     )
-
-
-# ---------------------------------------------------------------------------
-# Pagination
-# ---------------------------------------------------------------------------
-
-class _StandardPagination(PageNumberPagination):
-    page_size = 20
-    page_size_query_param = 'page_size'
-    max_page_size = 100
 
 
 # ---------------------------------------------------------------------------
@@ -384,7 +374,7 @@ class ApplicationListView(APIView):
             .order_by('-updated_at')
         )
 
-        paginator = _StandardPagination()
+        paginator = StandardPagination()
         page = paginator.paginate_queryset(qs, request)
         serializer = StaffApplicationListSerializer(page, many=True)
         return paginator.get_paginated_response(serializer.data)

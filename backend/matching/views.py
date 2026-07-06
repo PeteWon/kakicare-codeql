@@ -31,15 +31,15 @@ from django.db import IntegrityError, transaction
 from django.http import Http404
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.pagination import PageNumberPagination
+from kakicare.pagination import StandardPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.models import User
-from audit.services import record_audit
+from audit.mixins import AuditMixin
 from seniors.models import Senior
 from volunteers.models import VolunteerProfile
-from volunteers.permissions import IsApprovedVolunteer, IsStaff
+from accounts.permissions import IsApprovedVolunteer, IsStaff
 
 from .models import Match
 from .serializers import MatchStaffSerializer, MatchVolunteerSerializer, ProposeMatchSerializer
@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 # Audit mixin
 # ---------------------------------------------------------------------------
 
-class _MatchAuditMixin:
+class _MatchAuditMixin(AuditMixin):
     """Structural audit logging for all match views.
 
     Every match endpoint that returns senior-identifying information (even the
@@ -64,19 +64,7 @@ class _MatchAuditMixin:
     senior address, phone, or next-of-kin data.
     """
 
-    @staticmethod
-    def _get_ip(request) -> str | None:
-        xff = request.META.get('HTTP_X_FORWARDED_FOR')
-        return xff.split(',')[0].strip() if xff else request.META.get('REMOTE_ADDR')
-
-    def _audit(self, request, action: str, target_id: str | int = '') -> None:
-        record_audit(
-            user=request.user,
-            action=action,
-            target_type='Match',
-            target_id=target_id,
-            request_ip=self._get_ip(request),
-        )
+    audit_target_type = 'Match'
 
 
 # ---------------------------------------------------------------------------
@@ -99,12 +87,6 @@ def _activate_if_ready(match: Match) -> bool:
         match.save(update_fields=['status'])
         return True
     return False
-
-
-class _StandardPagination(PageNumberPagination):
-    page_size = 20
-    page_size_query_param = 'page_size'
-    max_page_size = 100
 
 
 # ---------------------------------------------------------------------------
@@ -155,7 +137,7 @@ class StaffMatchListCreateView(_MatchAuditMixin, APIView):
         count = qs.count()
         self._audit(request, 'match.list', target_id=f'count={count}')
 
-        paginator = _StandardPagination()
+        paginator = StandardPagination()
         page = paginator.paginate_queryset(qs, request)
         return paginator.get_paginated_response(MatchStaffSerializer(page, many=True).data)
 
@@ -380,7 +362,7 @@ class VolunteerMatchListView(_MatchAuditMixin, APIView):
             target_id=f'volunteer_id={request.user.pk},count={count}',
         )
 
-        paginator = _StandardPagination()
+        paginator = StandardPagination()
         page = paginator.paginate_queryset(qs, request)
         return paginator.get_paginated_response(
             MatchVolunteerSerializer(page, many=True).data

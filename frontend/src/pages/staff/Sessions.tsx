@@ -196,6 +196,218 @@ function CheckinCodeModal({
 }
 
 // ---------------------------------------------------------------------------
+// Status filter tabs (presentational)
+// ---------------------------------------------------------------------------
+
+function StatusFilterTabs({
+  value,
+  onSelect,
+}: {
+  value: SessionStatus | '';
+  onSelect: (s: SessionStatus | '') => void;
+}) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {STATUS_FILTERS.map((f) => {
+        const active = value === f.value;
+        return (
+          <button
+            key={f.value}
+            onClick={() => onSelect(f.value as SessionStatus | '')}
+            className={`rounded-xl px-4 py-1.5 text-sm font-medium transition-colors ${
+              active
+                ? f.urgent
+                  ? 'bg-red-600 text-white'
+                  : 'bg-primary-500 text-white'
+                : f.urgent
+                  ? 'border border-red-200 bg-white text-red-600 hover:bg-red-50'
+                  : 'border border-cream-300 bg-white text-primary-600 hover:bg-primary-50'
+            }`}
+          >
+            {f.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Expanded-row forms (presentational; all state lives in the parent)
+// ---------------------------------------------------------------------------
+
+function ConfirmDialogRow({
+  session,
+  colSpan,
+  onConfirm,
+  onBack,
+}: {
+  session: StaffSession;
+  colSpan: number;
+  onConfirm: () => void;
+  onBack: () => void;
+}) {
+  return (
+    <tr>
+      <td colSpan={colSpan} className="bg-primary-50 px-4 py-3">
+        <div className="flex flex-wrap items-start gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-primary-900">
+              Confirm this session?
+            </p>
+            <p className="mt-1 text-xs text-primary-600">
+              Confirming will generate a single-use 6-digit check-in code. You
+              must call the senior (<strong>{session.senior.phone_number}</strong>
+              ) and give them this code — they will pass it to the volunteer in
+              person at the session. The code is shown once and cannot be
+              retrieved again (AC-04).
+            </p>
+          </div>
+          <div className="flex shrink-0 gap-2">
+            <button
+              onClick={onConfirm}
+              className="rounded-xl bg-primary-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-600"
+            >
+              Yes, confirm &amp; get code
+            </button>
+            <button
+              onClick={onBack}
+              className="rounded-xl border border-primary-200 bg-white px-3 py-1.5 text-xs font-medium text-primary-700 hover:bg-primary-50"
+            >
+              Back
+            </button>
+          </div>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function CancelFormRow({
+  colSpan,
+  reason,
+  fieldError,
+  onReasonChange,
+  onSubmit,
+  onClose,
+}: {
+  colSpan: number;
+  reason: string;
+  fieldError: string;
+  onReasonChange: (v: string) => void;
+  onSubmit: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <tr>
+      <td colSpan={colSpan} className="bg-red-50 px-4 py-3">
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-red-800">
+            Cancel this session — enter a reason:
+          </p>
+          <textarea
+            value={reason}
+            onChange={(e) => onReasonChange(e.target.value)}
+            rows={2}
+            placeholder="Reason for cancellation (required)"
+            className={`w-full rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400 ${
+              fieldError ? 'border-red-400' : 'border-red-200'
+            }`}
+          />
+          {fieldError && <p className="text-xs text-red-700">{fieldError}</p>}
+          <div className="flex gap-2">
+            <button
+              onClick={onSubmit}
+              className="rounded-xl bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+            >
+              Cancel session
+            </button>
+            <button
+              onClick={onClose}
+              className="rounded-xl border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+function FollowupFormRow({
+  session,
+  colSpan,
+  outcome,
+  note,
+  fieldError,
+  onOutcomeChange,
+  onNoteChange,
+  onSubmit,
+  onClose,
+}: {
+  session: StaffSession;
+  colSpan: number;
+  outcome: FollowUpOutcome | '';
+  note: string;
+  fieldError: string;
+  onOutcomeChange: (v: FollowUpOutcome | '') => void;
+  onNoteChange: (v: string) => void;
+  onSubmit: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <tr>
+      <td colSpan={colSpan} className="bg-red-50 px-4 py-3">
+        {/* WELFARE NOTE: record what happened after a missed session
+            involving a vulnerable senior (AC-WF). */}
+        <div className="space-y-2">
+          <p className="text-sm font-medium text-red-800">
+            Record welfare follow-up for {session.senior.full_name}:
+          </p>
+          <select
+            value={outcome}
+            onChange={(e) => onOutcomeChange(e.target.value as FollowUpOutcome | '')}
+            className={`rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400 ${
+              fieldError ? 'border-red-400' : 'border-red-200'
+            }`}
+          >
+            <option value="">Select outcome…</option>
+            {FOLLOWUP_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          {fieldError && <p className="text-xs text-red-700">{fieldError}</p>}
+          <textarea
+            value={note}
+            onChange={(e) => onNoteChange(e.target.value)}
+            rows={2}
+            placeholder="Additional notes (optional)"
+            className="w-full rounded-xl border border-red-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={onSubmit}
+              className="rounded-xl bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
+            >
+              Save follow-up
+            </button>
+            <button
+              onClick={onClose}
+              className="rounded-xl border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
@@ -436,28 +648,7 @@ export function Sessions() {
       </h1>
 
       {/* ---- Status filter tabs ---- */}
-      <div className="flex flex-wrap gap-2">
-        {STATUS_FILTERS.map((f) => {
-          const active = statusFilter === f.value;
-          return (
-            <button
-              key={f.value}
-              onClick={() => setStatus(f.value as SessionStatus | '')}
-              className={`rounded-xl px-4 py-1.5 text-sm font-medium transition-colors ${
-                active
-                  ? f.urgent
-                    ? 'bg-red-600 text-white'
-                    : 'bg-primary-500 text-white'
-                  : f.urgent
-                    ? 'border border-red-200 bg-white text-red-600 hover:bg-red-50'
-                    : 'border border-cream-300 bg-white text-primary-600 hover:bg-primary-50'
-              }`}
-            >
-              {f.label}
-            </button>
-          );
-        })}
-      </div>
+      <StatusFilterTabs value={statusFilter} onSelect={setStatus} />
 
       {/* ---- Loading ---- */}
       {loading && (
@@ -619,171 +810,48 @@ export function Sessions() {
 
                       {/* Confirm dialog */}
                       {confirmDialogId === session.id && (
-                        <tr>
-                          <td
-                            colSpan={COL_SPAN}
-                            className="bg-primary-50 px-4 py-3"
-                          >
-                            <div className="flex flex-wrap items-start gap-4">
-                              <div className="min-w-0 flex-1">
-                                <p className="text-sm font-medium text-primary-900">
-                                  Confirm this session?
-                                </p>
-                                <p className="mt-1 text-xs text-primary-600">
-                                  Confirming will generate a single-use 6-digit
-                                  check-in code. You must call the senior (
-                                  <strong>
-                                    {session.senior.phone_number}
-                                  </strong>
-                                  ) and give them this code — they will pass it
-                                  to the volunteer in person at the session. The
-                                  code is shown once and cannot be retrieved
-                                  again (AC-04).
-                                </p>
-                              </div>
-                              <div className="flex shrink-0 gap-2">
-                                <button
-                                  onClick={() => void handleConfirm(session)}
-                                  className="rounded-xl bg-primary-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-primary-600"
-                                >
-                                  Yes, confirm &amp; get code
-                                </button>
-                                <button
-                                  onClick={() => setConfirmDialogId(null)}
-                                  className="rounded-xl border border-primary-200 bg-white px-3 py-1.5 text-xs font-medium text-primary-700 hover:bg-primary-50"
-                                >
-                                  Back
-                                </button>
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
+                        <ConfirmDialogRow
+                          session={session}
+                          colSpan={COL_SPAN}
+                          onConfirm={() => void handleConfirm(session)}
+                          onBack={() => setConfirmDialogId(null)}
+                        />
                       )}
 
                       {/* Cancel form */}
                       {cancelFormId === session.id && (
-                        <tr>
-                          <td
-                            colSpan={COL_SPAN}
-                            className="bg-red-50 px-4 py-3"
-                          >
-                            <div className="space-y-2">
-                              <p className="text-sm font-medium text-red-800">
-                                Cancel this session — enter a reason:
-                              </p>
-                              <textarea
-                                value={cancelReason}
-                                onChange={(e) =>
-                                  setCancelReason(e.target.value)
-                                }
-                                rows={2}
-                                placeholder="Reason for cancellation (required)"
-                                className={`w-full rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400 ${
-                                  cancelFieldError
-                                    ? 'border-red-400'
-                                    : 'border-red-200'
-                                }`}
-                              />
-                              {cancelFieldError && (
-                                <p className="text-xs text-red-700">
-                                  {cancelFieldError}
-                                </p>
-                              )}
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => void handleCancel(session.id)}
-                                  className="rounded-xl bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
-                                >
-                                  Cancel session
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setCancelFormId(null);
-                                    setCancelReason('');
-                                    setCancelFieldError('');
-                                  }}
-                                  className="rounded-xl border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50"
-                                >
-                                  Close
-                                </button>
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
+                        <CancelFormRow
+                          colSpan={COL_SPAN}
+                          reason={cancelReason}
+                          fieldError={cancelFieldError}
+                          onReasonChange={setCancelReason}
+                          onSubmit={() => void handleCancel(session.id)}
+                          onClose={() => {
+                            setCancelFormId(null);
+                            setCancelReason('');
+                            setCancelFieldError('');
+                          }}
+                        />
                       )}
 
                       {/* Follow-up form (welfare concern — missed session) */}
                       {followupFormId === session.id && (
-                        <tr>
-                          <td
-                            colSpan={COL_SPAN}
-                            className="bg-red-50 px-4 py-3"
-                          >
-                            {/* WELFARE NOTE: record what happened after a missed
-                                session involving a vulnerable senior (AC-WF). */}
-                            <div className="space-y-2">
-                              <p className="text-sm font-medium text-red-800">
-                                Record welfare follow-up for{' '}
-                                {session.senior.full_name}:
-                              </p>
-                              <select
-                                value={followupOutcome}
-                                onChange={(e) =>
-                                  setFollowupOutcome(
-                                    e.target.value as FollowUpOutcome | '',
-                                  )
-                                }
-                                className={`rounded-xl border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400 ${
-                                  followupFieldError
-                                    ? 'border-red-400'
-                                    : 'border-red-200'
-                                }`}
-                              >
-                                <option value="">Select outcome…</option>
-                                {FOLLOWUP_OPTIONS.map((o) => (
-                                  <option key={o.value} value={o.value}>
-                                    {o.label}
-                                  </option>
-                                ))}
-                              </select>
-                              {followupFieldError && (
-                                <p className="text-xs text-red-700">
-                                  {followupFieldError}
-                                </p>
-                              )}
-                              <textarea
-                                value={followupNote}
-                                onChange={(e) =>
-                                  setFollowupNote(e.target.value)
-                                }
-                                rows={2}
-                                placeholder="Additional notes (optional)"
-                                className="w-full rounded-xl border border-red-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
-                              />
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() =>
-                                    void handleFollowup(session.id)
-                                  }
-                                  className="rounded-xl bg-red-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-700"
-                                >
-                                  Save follow-up
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    setFollowupFormId(null);
-                                    setFollowupOutcome('');
-                                    setFollowupNote('');
-                                    setFollowupFieldError('');
-                                  }}
-                                  className="rounded-xl border border-red-200 bg-white px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-50"
-                                >
-                                  Close
-                                </button>
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
+                        <FollowupFormRow
+                          session={session}
+                          colSpan={COL_SPAN}
+                          outcome={followupOutcome}
+                          note={followupNote}
+                          fieldError={followupFieldError}
+                          onOutcomeChange={setFollowupOutcome}
+                          onNoteChange={setFollowupNote}
+                          onSubmit={() => void handleFollowup(session.id)}
+                          onClose={() => {
+                            setFollowupFormId(null);
+                            setFollowupOutcome('');
+                            setFollowupNote('');
+                            setFollowupFieldError('');
+                          }}
+                        />
                       )}
                     </Fragment>
                   ))}

@@ -17,6 +17,17 @@ from __future__ import annotations
 from .models import AuditLogEntry
 
 
+def get_client_ip(request) -> str | None:
+    """Return the client's source IP for audit logging.
+
+    SECURITY: the leftmost X-Forwarded-For entry is trusted ONLY because the app
+    sits behind our own nginx reverse proxy, which sets this header. This is the
+    single definition of that trust decision — do not re-implement it per app.
+    """
+    xff = request.META.get('HTTP_X_FORWARDED_FOR')
+    return xff.split(',')[0].strip() if xff else request.META.get('REMOTE_ADDR')
+
+
 def record_audit(
     *,
     user=None,

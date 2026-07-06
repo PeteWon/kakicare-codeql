@@ -20,18 +20,17 @@ view that lacks a _audit call. No Senior-data code path exists outside these vie
 import logging
 
 from django.db import transaction
-from django.db.models import Q
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.pagination import PageNumberPagination
+from kakicare.pagination import StandardPagination
 from rest_framework.response import Response
 from rest_framework.throttling import SimpleRateThrottle
 from rest_framework.views import APIView
 
-from audit.services import record_audit
+from audit.mixins import AuditMixin
 from matching.models import Match
 from sessions.models import Session
-from volunteers.permissions import IsStaff
+from accounts.permissions import IsStaff
 
 from .models import Senior
 from .serializers import SeniorSerializer
@@ -43,33 +42,21 @@ logger = logging.getLogger(__name__)
 # Audit mixin — structural audit logging for every Senior view
 # ---------------------------------------------------------------------------
 
-class _AuditMixin:
+class _AuditMixin(AuditMixin):
     """Wire audit logging into every Senior view.
 
     Design intent: all Senior-related views inherit this mixin. The single
-    call point (_audit) means there is NO code path to a Senior record that
-    can accidentally skip the audit log — a reviewer only needs to confirm
-    that each handler body calls self._audit once.
+    call point (_audit, from audit.mixins.AuditMixin) means there is NO code
+    path to a Senior record that can accidentally skip the audit log — a
+    reviewer only needs to confirm that each handler body calls self._audit once.
 
     AC-06, SR-AUD-01: every read and write of Senior data must be logged.
     SR-AUD-03: _audit logs only references (ids, action names, counts) — NEVER
     sensitive field values (address, phone, next-of-kin). The SeniorSerializer
-    data must not be passed to record_audit.
+    data must not be passed to the audit log.
     """
 
-    @staticmethod
-    def _get_ip(request) -> str | None:
-        xff = request.META.get('HTTP_X_FORWARDED_FOR')
-        return xff.split(',')[0].strip() if xff else request.META.get('REMOTE_ADDR')
-
-    def _audit(self, request, action: str, target_id: str | int = '') -> None:
-        record_audit(
-            user=request.user,
-            action=action,
-            target_type='Senior',
-            target_id=target_id,
-            request_ip=self._get_ip(request),
-        )
+    audit_target_type = 'Senior'
 
 
 # ---------------------------------------------------------------------------
@@ -100,16 +87,6 @@ class SeniorListThrottle(SimpleRateThrottle):
 
 
 # ---------------------------------------------------------------------------
-# Pagination
-# ---------------------------------------------------------------------------
-
-class _StandardPagination(PageNumberPagination):
-    page_size = 20
-    page_size_query_param = 'page_size'
-    max_page_size = 100
-
-
-# ---------------------------------------------------------------------------
 # Helper
 # ---------------------------------------------------------------------------
 
@@ -135,7 +112,8 @@ class SeniorListCreateView(_AuditMixin, APIView):
 
     Query parameters for GET:
       ?is_active=true|false   filter by active status (omit for all)
-      ?search=<text>          case-insensitive match on full_name or address
+      ?search=<text>          case-insensitive match on full_name (SR-DATA-05:
+                              address is encrypted at rest and not searchable)
     """
 
     permission_classes = [IsStaff]
@@ -158,9 +136,9 @@ class SeniorListCreateView(_AuditMixin, APIView):
 
         search = request.query_params.get('search', '').strip()
         if search:
-            qs = qs.filter(
-                Q(full_name__icontains=search) | Q(address__icontains=search)
-            )
+            # SR-DATA-05: address is encrypted at rest and therefore not
+            # substring-searchable; search matches on full_name only.
+            qs = qs.filter(full_name__icontains=search)
 
         count = qs.count()
 
@@ -169,7 +147,7 @@ class SeniorListCreateView(_AuditMixin, APIView):
         # SR-AUD-03: no Senior field values (address, phone, etc.) are logged.
         self._audit(request, 'senior.list', target_id=f'count={count}')
 
-        paginator = _StandardPagination()
+        paginator = StandardPagination()
         page = paginator.paginate_queryset(qs, request)
         return paginator.get_paginated_response(SeniorSerializer(page, many=True).data)
 

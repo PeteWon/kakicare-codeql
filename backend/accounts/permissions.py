@@ -1,5 +1,10 @@
 """Reusable DRF permission classes for the KakiCare volunteer/staff split.
 
+These are cross-cutting role checks used by every audience-restricted app
+(volunteers, seniors, matching, sessions, concerns, audit), so they live in the
+accounts app — the home of authentication and role logic — rather than inside
+any single feature app.
+
 SECURITY (SR-AUTHZ-01): authorisation is enforced server-side on EVERY request
 by these permission classes. The frontend hiding pages for a given role is a
 usability convenience, NOT a security control — it is trivially bypassable.
@@ -9,8 +14,7 @@ permission class; never rely on the frontend to keep a user out.
 
 from rest_framework.permissions import BasePermission
 
-from accounts.models import User
-from volunteers.models import VolunteerProfile
+from .models import User
 
 
 class IsVolunteer(BasePermission):
@@ -43,6 +47,10 @@ class IsApprovedVolunteer(BasePermission):
     """
 
     def has_permission(self, request, view):
+        # Imported lazily to avoid coupling accounts' import graph to the
+        # volunteers app at module load; by request time all models are ready.
+        from volunteers.models import VolunteerProfile
+
         user = request.user
         if not (
             user

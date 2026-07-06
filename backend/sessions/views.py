@@ -40,15 +40,15 @@ from datetime import timedelta
 from django.conf import settings
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.pagination import PageNumberPagination
+from kakicare.pagination import StandardPagination
 from rest_framework.response import Response
 from rest_framework.throttling import SimpleRateThrottle
 from rest_framework.views import APIView
 
-from audit.services import record_audit
+from audit.mixins import AuditMixin
 from matching.models import Match
 from seniors.models import Senior
-from volunteers.permissions import IsApprovedVolunteer, IsStaff
+from accounts.permissions import IsApprovedVolunteer, IsStaff
 
 from .models import Session
 from .serializers import (
@@ -87,26 +87,14 @@ class CheckInThrottle(SimpleRateThrottle):
 # Audit mixin
 # ---------------------------------------------------------------------------
 
-class _SessionAuditMixin:
+class _SessionAuditMixin(AuditMixin):
     """Structural audit logging for all session views.
 
     SR-AUD-03: target_id carries only the Session pk or a summary — never
     senior address, phone, or next-of-kin data.
     """
 
-    @staticmethod
-    def _get_ip(request) -> str | None:
-        xff = request.META.get('HTTP_X_FORWARDED_FOR')
-        return xff.split(',')[0].strip() if xff else request.META.get('REMOTE_ADDR')
-
-    def _audit(self, request, action: str, target_id: str | int = '') -> None:
-        record_audit(
-            user=request.user,
-            action=action,
-            target_type='Session',
-            target_id=target_id,
-            request_ip=self._get_ip(request),
-        )
+    audit_target_type = 'Session'
 
 
 # ---------------------------------------------------------------------------
@@ -127,12 +115,6 @@ def _verify_checkin_code(presented: str, stored_hash: str) -> bool:
     """AC-04: constant-time comparison to prevent timing side-channels."""
     presented_hash = hashlib.sha256(presented.encode()).hexdigest()
     return hmac.compare_digest(presented_hash, stored_hash)
-
-
-class _StandardPagination(PageNumberPagination):
-    page_size = 20
-    page_size_query_param = 'page_size'
-    max_page_size = 100
 
 
 # ---------------------------------------------------------------------------
@@ -158,7 +140,7 @@ class VolunteerSessionListCreateView(_SessionAuditMixin, APIView):
             request, 'session.list',
             target_id=f'volunteer_id={request.user.pk},count={count}',
         )
-        paginator = _StandardPagination()
+        paginator = StandardPagination()
         page = paginator.paginate_queryset(qs, request)
         return paginator.get_paginated_response(
             SessionVolunteerSerializer(page, many=True).data
@@ -375,7 +357,7 @@ class StaffSessionListView(_SessionAuditMixin, APIView):
         count = qs.count()
         self._audit(request, 'session.list', target_id=f'count={count}')
 
-        paginator = _StandardPagination()
+        paginator = StandardPagination()
         page = paginator.paginate_queryset(qs, request)
         return paginator.get_paginated_response(
             SessionStaffSerializer(page, many=True).data
