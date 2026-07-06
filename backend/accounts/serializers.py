@@ -170,8 +170,12 @@ class MFAResetResolveSerializer(serializers.Serializer):
     """
 
     # The out-of-band channel staff used to confirm the requester's identity.
+    # 'unable_to_verify' covers cases where no channel could be reached at
+    # all (e.g. no phone number on file) — it may only pair with a 'failed'
+    # outcome (see MFAResetResolveView).
     verification_method = serializers.ChoiceField(
-        choices=['phone_call', 'video_call', 'email', 'in_person'], required=False
+        choices=['phone_call', 'video_call', 'email', 'in_person', 'unable_to_verify'],
+        required=False,
     )
     # 'success' clears the target's MFA and resolves the request; 'failed'
     # rejects it and leaves MFA untouched (see MFAResetResolveView).

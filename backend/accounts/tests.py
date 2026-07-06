@@ -229,6 +229,8 @@ class MFAResetFlowTests(KakiCareAPITestCase):
         self.request_url = reverse('auth-mfa-reset-request')
         self.resolve_url_template = 'staff-mfa-reset-resolve'
         self.volunteer = create_volunteer(email='lost-mfa@example.com')
+        # A reset request only makes sense once MFA is actually enrolled.
+        add_confirmed_totp_device(self.volunteer)
         self.staff = create_staff(email='resolver@example.com')
         self.superuser = User.objects.create_superuser(
             email='admin@example.com',
@@ -266,6 +268,32 @@ class MFAResetFlowTests(KakiCareAPITestCase):
         self.assertNotIn('request_id', valid.data)
         self.assertEqual(valid.data, invalid.data)
         # Only the valid request creates a row.
+        self.assertEqual(MFAResetRequest.objects.filter(requester=self.volunteer).count(), 1)
+
+    def test_request_is_a_noop_when_mfa_was_never_enrolled(self):
+        # A reset request only makes sense for an account that actually has
+        # MFA enabled — otherwise it's noise in the staff queue.
+        never_enrolled = create_volunteer(email='no-mfa@example.com')
+        resp = self.client.post(
+            self.request_url,
+            {'email': 'no-mfa@example.com', 'password': DEFAULT_PASSWORD},
+        )
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.data, self.client.post(
+            self.request_url,
+            {'email': 'no-mfa@example.com', 'password': 'wrong-password-123'},
+        ).data)
+        self.assertFalse(MFAResetRequest.objects.filter(requester=never_enrolled).exists())
+
+    def test_repeated_requests_do_not_flood_the_queue(self):
+        # Submitting the request multiple times while one is already pending
+        # must not create duplicate rows in the staff queue.
+        for _ in range(3):
+            resp = self.client.post(
+                self.request_url,
+                {'email': 'lost-mfa@example.com', 'password': DEFAULT_PASSWORD},
+            )
+            self.assertEqual(resp.status_code, 200)
         self.assertEqual(MFAResetRequest.objects.filter(requester=self.volunteer).count(), 1)
 
     def test_staff_can_resolve_volunteer_reset_and_it_is_audited(self):
@@ -321,6 +349,44 @@ class MFAResetFlowTests(KakiCareAPITestCase):
         self.assertTrue(
             AuditLogEntry.objects.filter(action='auth.mfa.reset.rejected', target_id=str(request_obj.pk)).exists()
         )
+
+    def test_unable_to_verify_rejects_the_request(self):
+        device = add_confirmed_totp_device(self.volunteer)
+        request_obj = MFAResetRequest.objects.create(
+            requester=self.volunteer,
+            target_user=self.volunteer,
+            reason='lost_authenticator',
+        )
+        self.client.force_authenticate(user=self.staff)
+        resp = self.client.post(
+            reverse(self.resolve_url_template, args=[request_obj.pk]),
+            {
+                'verification_method': 'unable_to_verify',
+                'verification_outcome': 'failed',
+            },
+        )
+        self.assertEqual(resp.status_code, 200)
+        request_obj.refresh_from_db()
+        self.assertEqual(request_obj.status, MFAResetRequest.Status.REJECTED)
+        self.assertTrue(device.__class__.objects.filter(user=self.volunteer).exists())
+
+    def test_unable_to_verify_cannot_be_paired_with_success(self):
+        request_obj = MFAResetRequest.objects.create(
+            requester=self.volunteer,
+            target_user=self.volunteer,
+            reason='lost_authenticator',
+        )
+        self.client.force_authenticate(user=self.staff)
+        resp = self.client.post(
+            reverse(self.resolve_url_template, args=[request_obj.pk]),
+            {
+                'verification_method': 'unable_to_verify',
+                'verification_outcome': 'success',
+            },
+        )
+        self.assertEqual(resp.status_code, 400)
+        request_obj.refresh_from_db()
+        self.assertEqual(request_obj.status, MFAResetRequest.Status.PENDING)
 
     def test_invalid_verification_outcome_choice_is_rejected(self):
         request_obj = MFAResetRequest.objects.create(

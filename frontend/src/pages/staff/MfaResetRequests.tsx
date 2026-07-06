@@ -20,11 +20,12 @@ import type {
 import { usePageTitle } from '@/lib/usePageTitle';
 
 const STATUS_OPTIONS: MfaResetStatus[] = ['pending', 'resolved', 'rejected'];
-const METHOD_OPTIONS: { value: MfaVerificationMethod; label: string }[] = [
+const METHOD_OPTIONS: { value: MfaVerificationMethod; label: string; warn?: boolean }[] = [
   { value: 'phone_call', label: 'Phone call' },
   { value: 'video_call', label: 'Video call' },
   { value: 'email', label: 'Confirmed via email' },
   { value: 'in_person', label: 'In person' },
+  { value: 'unable_to_verify', label: 'Unable to verify — reject request', warn: true },
 ];
 const OUTCOME_OPTIONS: { value: MfaVerificationOutcome; label: string }[] = [
   { value: 'success', label: 'Success — identity confirmed' },
@@ -77,6 +78,13 @@ export function MfaResetRequests() {
       setRowError((prev) => ({
         ...prev,
         [request.id]: 'Select both the verification method and outcome.',
+      }));
+      return;
+    }
+    if (method === 'unable_to_verify' && outcome === 'success') {
+      setRowError((prev) => ({
+        ...prev,
+        [request.id]: 'Cannot mark this as a success — identity was never verified.',
       }));
       return;
     }
@@ -190,17 +198,24 @@ export function MfaResetRequests() {
                           Verification method
                           <select
                             value={methods[request.id] ?? ''}
-                            onChange={(e) =>
-                              setMethods((prev) => ({
-                                ...prev,
-                                [request.id]: e.target.value as MfaVerificationMethod | '',
-                              }))
-                            }
+                            onChange={(e) => {
+                              const value = e.target.value as MfaVerificationMethod | '';
+                              setMethods((prev) => ({ ...prev, [request.id]: value }));
+                              if (value === 'unable_to_verify') {
+                                // Can't succeed at verification that was never
+                                // attempted — steer the outcome accordingly.
+                                setOutcomes((prev) => ({ ...prev, [request.id]: 'failed' }));
+                              }
+                            }}
                             className="mt-1 block w-full rounded-xl border border-cream-300 bg-white px-3 py-2 text-sm text-primary-900 shadow-sm outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100"
                           >
                             <option value="">How was identity confirmed?</option>
                             {METHOD_OPTIONS.map((m) => (
-                              <option key={m.value} value={m.value}>
+                              <option
+                                key={m.value}
+                                value={m.value}
+                                style={m.warn ? { color: '#b91c1c' } : undefined}
+                              >
                                 {m.label}
                               </option>
                             ))}

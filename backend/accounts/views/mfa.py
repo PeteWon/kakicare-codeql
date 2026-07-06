@@ -319,6 +319,22 @@ class MFAResetRequestView(APIView):
         if not user.check_password(password):
             return Response(self._GENERIC_RESPONSE, status=status.HTTP_200_OK)
 
+        has_confirmed_totp = EncryptedTOTPDevice.objects.devices_for_user(
+            user, confirmed=True
+        ).exists()
+        if not has_confirmed_totp:
+            # Nothing to reset — MFA was never enabled for this account. Silently
+            # no-op (same generic response) rather than queuing a request with
+            # nothing for staff to action.
+            return Response(self._GENERIC_RESPONSE, status=status.HTTP_200_OK)
+
+        if MFAResetRequest.objects.filter(
+            target_user=user, status=MFAResetRequest.Status.PENDING
+        ).exists():
+            # A request is already awaiting staff review. Silently no-op rather
+            # than queuing duplicates that would flood the staff queue.
+            return Response(self._GENERIC_RESPONSE, status=status.HTTP_200_OK)
+
         request_obj = MFAResetRequest.objects.create(
             requester=user,
             target_user=user,
@@ -403,7 +419,9 @@ class MFAResetResolveView(APIView):
     out-of-band identity-verification method and outcome before it is executed.
 
     verification_method is one of 'phone_call' / 'video_call' / 'email' /
-    'in_person' — the out-of-band channel used to confirm identity.
+    'in_person' / 'unable_to_verify' — the out-of-band channel used to confirm
+    identity. 'unable_to_verify' means no channel could be reached at all, and
+    may only be paired with a 'failed' outcome.
 
     verification_outcome is 'success' or 'failed': 'success' clears the target's
     MFA and marks the request resolved; 'failed' marks it rejected and leaves
@@ -454,6 +472,18 @@ class MFAResetResolveView(APIView):
                         'detail': (
                             'Out-of-band verification method and outcome are required '
                             'for MFA resets.'
+                        )
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # 'unable_to_verify' means identity was never actually confirmed —
+            # it cannot be paired with a 'success' outcome.
+            if verification_method == 'unable_to_verify' and verification_outcome == 'success':
+                return Response(
+                    {
+                        'detail': (
+                            "Cannot mark this as a success — identity was never verified."
                         )
                     },
                     status=status.HTTP_400_BAD_REQUEST,

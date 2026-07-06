@@ -37,7 +37,12 @@ export interface MfaResetRequestResult {
   detail: string;
 }
 
-export type MfaVerificationMethod = 'phone_call' | 'video_call' | 'email' | 'in_person';
+export type MfaVerificationMethod =
+  | 'phone_call'
+  | 'video_call'
+  | 'email'
+  | 'in_person'
+  | 'unable_to_verify';
 
 export type MfaVerificationOutcome = 'success' | 'failed';
 
