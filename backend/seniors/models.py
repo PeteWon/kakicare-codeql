@@ -1,13 +1,13 @@
 """Senior records — managed by staff; seniors never log in.
 
-PLANNED HARDENING (SR-DATA-05): several fields on Senior hold sensitive personal
-data (home address, phone number, next-of-kin name and contact). For v1 these
-are stored as plain columns to keep the model simple, but APPLICATION-LAYER
-ENCRYPTION of these fields is a planned hardening step before deployment: values
-will be encrypted in the application before being written to the database and
-decrypted on read, so the raw values are not exposed in a database dump. Each
-such field is flagged with a `# TODO(security)` comment below. Encryption is NOT
-implemented now.
+SR-DATA-05 (implemented): several fields on Senior hold sensitive personal data
+(home address, phone number, next-of-kin name and contact). These are encrypted
+at the application layer via EncryptedTextField (Fernet, see seniors/fields.py):
+values are encrypted before being written to the database and decrypted on read,
+so the raw values are not exposed in a database dump. Encryption is transparent
+to serializers, views and the admin — they read/write plaintext as normal.
+Consequence: encrypted columns are not substring-searchable, so the senior
+search matches on full_name only (see seniors/views.py).
 
 `availability` uses the same structured JSON shape as volunteers: a mapping of
 weekday -> list of time blocks, e.g. {"Mon": ["Morning"], "Wed": ["Afternoon"]}.
@@ -15,6 +15,8 @@ weekday -> list of time blocks, e.g. {"Mon": ["Morning"], "Wed": ["Afternoon"]}.
 
 from django.conf import settings
 from django.db import models
+
+from .fields import EncryptedTextField
 
 
 class Senior(models.Model):
@@ -27,10 +29,10 @@ class Senior(models.Model):
 
     full_name = models.CharField(max_length=255)
 
-    # TODO(security): encrypt at application layer before deployment (SR-DATA-05)
-    address = models.TextField(blank=True)
-    # TODO(security): encrypt at application layer before deployment (SR-DATA-05)
-    phone_number = models.CharField(max_length=32, blank=True)
+    # SR-DATA-05: encrypted at rest (input length validated in the serializer).
+    address = EncryptedTextField(blank=True)
+    # SR-DATA-05: encrypted at rest.
+    phone_number = EncryptedTextField(blank=True)
 
     preferred_language = models.CharField(max_length=50, blank=True)
     accessibility_needs = models.TextField(blank=True)
@@ -40,10 +42,10 @@ class Senior(models.Model):
 
     notes = models.TextField(blank=True)
 
-    # TODO(security): encrypt at application layer before deployment (SR-DATA-05)
-    next_of_kin_name = models.CharField(max_length=255, blank=True)
-    # TODO(security): encrypt at application layer before deployment (SR-DATA-05)
-    next_of_kin_contact = models.CharField(max_length=64, blank=True)
+    # SR-DATA-05: encrypted at rest.
+    next_of_kin_name = EncryptedTextField(blank=True)
+    # SR-DATA-05: encrypted at rest.
+    next_of_kin_contact = EncryptedTextField(blank=True)
 
     # FR-S-13 / SR-S-13: consent must be recorded before a senior can be matched
     # or have sessions scheduled. Defaults to not_recorded so existing records

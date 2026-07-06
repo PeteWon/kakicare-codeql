@@ -24,11 +24,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from sessions.models import Session
-from volunteers.permissions import IsApprovedVolunteer, IsStaff
+from accounts.permissions import IsApprovedVolunteer, IsStaff
 
 from .audit import _ConcernAuditMixin
 from .models import WelfareConcern
-from .pagination import _StandardPagination
+from kakicare.pagination import StandardPagination
 from .serializers import ConcernCreateSerializer, ConcernReadSerializer
 
 logger = logging.getLogger(__name__)
@@ -99,7 +99,7 @@ class StaffConcernListView(_ConcernAuditMixin, APIView):
         if status_filter in (WelfareConcern.Status.OPEN, WelfareConcern.Status.RESOLVED):
             qs = qs.filter(status=status_filter)
 
-        paginator = _StandardPagination()
+        paginator = StandardPagination()
         page = paginator.paginate_queryset(qs, request)
         return paginator.get_paginated_response(
             ConcernReadSerializer(page, many=True).data

@@ -95,6 +95,7 @@ jobs:
     env:
       SECRET_KEY: ci-only-secret-key-do-not-reuse
       TOTP_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      FIELD_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
       DEBUG: 'True'
       ALLOWED_HOSTS: 'localhost,127.0.0.1'
       POSTGRES_DB: kakicare
@@ -183,6 +184,7 @@ jobs:
     env:
       SECRET_KEY: ci-only-secret-key-do-not-reuse
       TOTP_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      FIELD_ENCRYPTION_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
       # DEBUG False so the scan sees the production-representative Django posture
       # (no debug pages, ALLOWED_HOSTS enforced). No SECURE_SSL_REDIRECT is set in
       # settings (HTTPS redirect is an nginx concern), so plain-HTTP scanning

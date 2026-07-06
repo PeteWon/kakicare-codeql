@@ -289,6 +289,13 @@ OTP_TOTP_ISSUER = 'KakiCare'
 #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 TOTP_ENCRYPTION_KEY = env('TOTP_ENCRYPTION_KEY')
 
+# SR-DATA-05: sensitive Senior PII (address, phone, next-of-kin) is encrypted at
+# rest with Fernet, using a dedicated key separate from the TOTP secret key.
+# Falls back to TOTP_ENCRYPTION_KEY if unset so existing deployments keep working;
+# provision a distinct key in production. Generate one with:
+#   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+FIELD_ENCRYPTION_KEY = env('FIELD_ENCRYPTION_KEY', default=TOTP_ENCRYPTION_KEY)
+
 
 # --- Frontend ----------------------------------------------------------------
 # Used when constructing links in outgoing emails (e.g. email verification).

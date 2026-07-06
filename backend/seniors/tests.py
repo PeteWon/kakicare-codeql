@@ -9,9 +9,11 @@ Covers Report II §3.5 (access control) and §3.6/C9 (logging):
 
 from datetime import timedelta
 
+from django.db import connection
 from django.urls import reverse
 
 from audit.models import AuditLogEntry
+from seniors.fields import _fernet
 from kakicare.test_utils import (
     KakiCareAPITestCase,
     create_active_match,
@@ -96,6 +98,68 @@ class SeniorAuditTests(KakiCareAPITestCase):
         )
         for pii in (SECRET_ADDRESS, '+6591112222', 'Secret Kin', 'Mdm Confidential'):
             self.assertNotIn(pii, blob)
+
+
+class SeniorPIIEncryptionTests(KakiCareAPITestCase):
+    """SR-DATA-05: sensitive Senior fields are encrypted at rest."""
+
+    def _raw_row(self, pk):
+        with connection.cursor() as cur:
+            cur.execute(
+                'SELECT address, phone_number, next_of_kin_name, '
+                'next_of_kin_contact FROM seniors_senior WHERE id = %s',
+                [pk],
+            )
+            return cur.fetchone()
+
+    def test_pii_is_ciphertext_at_rest_and_plaintext_via_orm(self):
+        staff = create_staff(email='crypto@example.com')
+        senior = create_senior(staff, address=SECRET_ADDRESS)
+
+        # The ORM transparently returns plaintext.
+        senior.refresh_from_db()
+        self.assertEqual(senior.address, SECRET_ADDRESS)
+        self.assertEqual(senior.phone_number, '+6590000000')
+        self.assertEqual(senior.next_of_kin_name, 'Tan Wei Ming')
+
+        # The raw DB columns hold Fernet ciphertext — never the plaintext.
+        stored = self._raw_row(senior.pk)
+        plains = [SECRET_ADDRESS, '+6590000000', 'Tan Wei Ming', '+6590000001']
+        for ciphertext, plain in zip(stored, plains):
+            self.assertNotEqual(ciphertext, plain)
+            self.assertNotIn(plain, ciphertext)  # plaintext not even a substring
+            # And it decrypts back to the original value.
+            self.assertEqual(_fernet().decrypt(ciphertext.encode()).decode(), plain)
+
+    def test_legacy_plaintext_row_is_tolerated_and_reencrypts_on_save(self):
+        # Reproduces the data-migration path: a row written before encryption was
+        # enabled holds plaintext. Write plaintext straight to the column via raw
+        # SQL (bypassing the field), then assert reads tolerate it and a re-save
+        # (what the migration does) encrypts it.
+        staff = create_staff(email='legacy@example.com')
+        senior = create_senior(staff, address=SECRET_ADDRESS)
+        with connection.cursor() as cur:
+            cur.execute(
+                'UPDATE seniors_senior SET address = %s WHERE id = %s',
+                ['LEGACY PLAINTEXT', senior.pk],
+            )
+
+        # Read tolerates legacy plaintext (decrypt fails → value returned as-is).
+        senior.refresh_from_db()
+        self.assertEqual(senior.address, 'LEGACY PLAINTEXT')
+
+        # The migration re-saves each row; that encrypts the value at rest.
+        senior.save(update_fields=['address'])
+        (address, *_rest) = self._raw_row(senior.pk)
+        self.assertNotEqual(address, 'LEGACY PLAINTEXT')
+        self.assertEqual(_fernet().decrypt(address.encode()).decode(), 'LEGACY PLAINTEXT')
+
+    def test_blank_pii_is_stored_empty_not_ciphertext(self):
+        # blank=True must be preserved — no ciphertext produced for empty input.
+        staff = create_staff(email='crypto-blank@example.com')
+        senior = create_senior(staff, address='')
+        (address, _phone, _nok, _nokc) = self._raw_row(senior.pk)
+        self.assertEqual(address, '')
 
 
 class SeniorDeactivationTests(KakiCareAPITestCase):
