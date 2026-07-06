@@ -36,10 +36,10 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.models import User
-from audit.services import record_audit
+from audit.mixins import AuditMixin
 from seniors.models import Senior
 from volunteers.models import VolunteerProfile
-from volunteers.permissions import IsApprovedVolunteer, IsStaff
+from accounts.permissions import IsApprovedVolunteer, IsStaff
 
 from .models import Match
 from .serializers import MatchStaffSerializer, MatchVolunteerSerializer, ProposeMatchSerializer
@@ -51,7 +51,7 @@ logger = logging.getLogger(__name__)
 # Audit mixin
 # ---------------------------------------------------------------------------
 
-class _MatchAuditMixin:
+class _MatchAuditMixin(AuditMixin):
     """Structural audit logging for all match views.
 
     Every match endpoint that returns senior-identifying information (even the
@@ -64,19 +64,7 @@ class _MatchAuditMixin:
     senior address, phone, or next-of-kin data.
     """
 
-    @staticmethod
-    def _get_ip(request) -> str | None:
-        xff = request.META.get('HTTP_X_FORWARDED_FOR')
-        return xff.split(',')[0].strip() if xff else request.META.get('REMOTE_ADDR')
-
-    def _audit(self, request, action: str, target_id: str | int = '') -> None:
-        record_audit(
-            user=request.user,
-            action=action,
-            target_type='Match',
-            target_id=target_id,
-            request_ip=self._get_ip(request),
-        )
+    audit_target_type = 'Match'
 
 
 # ---------------------------------------------------------------------------

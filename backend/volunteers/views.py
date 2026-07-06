@@ -32,7 +32,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import VolunteerDocument, VolunteerProfile
-from .permissions import IsStaff, IsVolunteer
+from accounts.permissions import IsStaff, IsVolunteer
 from .serializers import (
     ApplicationDecisionSerializer,
     DocumentUploadSerializer,

@@ -24,7 +24,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from sessions.models import Session
-from volunteers.permissions import IsApprovedVolunteer, IsStaff
+from accounts.permissions import IsApprovedVolunteer, IsStaff
 
 from .audit import _ConcernAuditMixin
 from .models import WelfareConcern
