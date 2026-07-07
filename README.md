@@ -13,6 +13,56 @@ This repository is a monorepo with two sibling apps:
 
 The frontend talks to the backend over a typed API layer.
 
+## What the platform does
+
+KakiCare digitises the coordination of a community **befriending programme**, in which volunteers
+give regular companionship to isolated or vulnerable seniors through home visits and phone calls.
+It replaces ad-hoc spreadsheets and chat groups with a single system that vets volunteers, stores
+seniors' details safely, proposes and tracks matches, schedules and verifies each visit, and keeps
+a tamper-evident audit trail — all while protecting the seniors' personal data.
+
+### Who uses it
+
+- **Volunteers** — members of the public who apply, are vetted, and are matched to a senior.
+- **Staff** — programme coordinators who review applications, manage senior records, propose
+  matches, and oversee sessions and welfare.
+- **Admins** — operators (Django superusers) who work behind an MFA-gated admin portal and are the
+  only accounts that can create staff (via emailed single-use invite).
+- **Seniors** — the people being befriended. They are **records managed by staff, not users**: they
+  never log in, and their contact details are protected.
+
+### What you can do
+
+**As a volunteer:** register and verify your email, complete a vetting profile (languages,
+availability, and uploaded identity/declaration documents), optionally enable two-factor
+authentication, view the matches staff propose, accept or decline them, book visit or call sessions
+within programme hours, check in and out of a session with a one-time code, review your session
+history, and request account deactivation.
+
+**As a staff member:** review and approve/reject volunteer applications, create and maintain senior
+records (including consent status), propose volunteer–senior matches, confirm booked sessions (which
+issues a single-use check-in code), monitor upcoming and missed sessions and record welfare
+follow-ups, handle welfare concerns raised about a senior, process MFA-reset and account-deactivation
+requests, and inspect the audit log.
+
+### How a match works
+
+Staff propose a match between an approved volunteer and a consenting senior. Once it is active, the
+volunteer books sessions; a senior's **full contact details are disclosed only just-in-time** — in a
+short window around each scheduled session — and are otherwise limited to first name, language, and
+general locality. At the visit, staff relay a one-time code to the senior, who passes it to the
+volunteer, giving a proof-of-presence check-in. A missed session raises a welfare follow-up so no
+vulnerable senior is quietly left unvisited.
+
+### Security at a glance
+
+As an ICT2216 Secure Software Development project, KakiCare is built defence-in-depth: in-house
+authentication with Argon2id password hashing and mandatory staff MFA, strict server-side access
+control, just-in-time disclosure of senior contact details, magic-byte-validated document uploads
+stored outside the web root, field-level encryption of senior PII at rest, an append-only audit log
+enforced at the database level, and HTTPS with a hardened TLS configuration in production. The full
+security-implementation write-up is in the D2 report under `docs/`.
+
 ## Repository layout
 
 ```
@@ -165,8 +215,11 @@ docker compose down -v         # stop AND delete the database volume (full reset
 ## Deployment (EC2)
 
 Production runs as a self-contained Docker Compose stack on the school-provided
-EC2 instance. Three containers — `nginx` (port 80), `web` (gunicorn + Django,
-internal), `db` (Postgres, internal). Only port 80 is exposed.
+EC2 instance. Five containers — `nginx` (ports 80 and 443; TLS termination +
+reverse proxy), `web` (gunicorn + Django, internal), `db` (Postgres, internal),
+`certbot` (auto-renews the TLS certificate), and `scheduler` (runs the
+missed-session sweep). Only `nginx` publishes host ports (80 and 443); everything
+else is reachable only on the internal Docker network.
 
 ### Test the production stack locally first
 
@@ -288,9 +341,9 @@ docker compose -f docker-compose.prod.yml exec nginx nginx -s reload
 
 ### Set up automated deploys (GitHub Actions)
 
-CI (`.github/workflows/ci.yml`) runs on every push and PR. Deploys
-(`.github/workflows/deploy.yml`) run after CI passes on `main`. Configure these
-repository secrets at **Settings → Secrets and variables → Actions**:
+CI (`.github/workflows/ci.yml`) runs on every push and PR; the deploy job in that
+same workflow runs after CI passes on a push to `main`. Configure these repository
+secrets at **Settings → Secrets and variables → Actions**:
 
 | Secret name        | Value                                                       |
 | ------------------ | ----------------------------------------------------------- |
@@ -369,7 +422,7 @@ blocked. `main` additionally requires one approving review.
   registry (e.g. GHCR) would stop building on the production host and give a
   fast, reliable rollback (redeploy a previous tag instead of rebuilding).
 - **Staging environment** to validate a deploy before it reaches users.
-- **Application-layer encryption of Senior PII** (see `seniors/models.py`
-  `TODO(security)` notes) and **DB backup before auto-migrations**.
+- **DB backup before auto-migrations**, so a failed migration during a deploy can
+  be rolled back cleanly.
 
 
