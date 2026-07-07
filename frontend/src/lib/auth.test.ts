@@ -10,6 +10,7 @@ function makeUser(role: User['role']): User {
     role,
     emailVerifiedAt: null,
     createdAt: '2026-01-01T00:00:00Z',
+    isSuperuser: false,
   };
 }
 

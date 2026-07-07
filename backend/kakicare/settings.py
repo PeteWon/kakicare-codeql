@@ -110,6 +110,25 @@ DATABASES = {
 }
 
 
+# --- Cache ---------------------------------------------------------------
+# SR-AUTH-04: DRF's throttle classes (LoginRateThrottle & friends in
+# accounts/views/_common.py) store attempt counters via Django's cache
+# framework. Production runs multiple gunicorn worker processes (see
+# backend/Dockerfile), each with its own memory space — the default
+# LocMemCache would give each worker an independent counter, inflating the
+# effective rate limit to roughly (limit * worker count) instead of a shared
+# limit. DatabaseCache is backed by the existing Postgres instance, so
+# counters are consistent across all workers with no new infrastructure to
+# operate. The table is created by `manage.py createcachetable` (run from
+# entrypoint.sh alongside migrate).
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.db.DatabaseCache',
+        'LOCATION': 'django_cache',
+    }
+}
+
+
 # --- Authentication ----------------------------------------------------------
 
 # Custom user model: email is the login identifier (no username).

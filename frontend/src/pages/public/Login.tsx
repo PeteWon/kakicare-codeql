@@ -28,6 +28,7 @@ import { usePageTitle } from '@/lib/usePageTitle';
 
 const GENERIC_LOGIN_ERROR = 'Invalid email or password.';
 const GENERIC_MFA_ERROR = 'Invalid code. Please try again.';
+const RATE_LIMIT_ERROR = 'Too many login attempts. Please wait a few minutes and try again.';
 
 // credentials  → email + password form (initial)
 // mfa          → TOTP/backup-code entry for enrolled users
@@ -115,8 +116,12 @@ export function Login() {
           setFormError(GENERIC_LOGIN_ERROR);
           return;
       }
-    } catch {
-      setFormError('Something went wrong. Please try again.');
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 429) {
+        setFormError(RATE_LIMIT_ERROR);
+      } else {
+        setFormError('Something went wrong. Please try again.');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -163,8 +168,12 @@ export function Login() {
         return;
       }
       setFormError(GENERIC_MFA_ERROR);
-    } catch {
-      setFormError('Something went wrong. Please try again.');
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 429) {
+        setFormError(RATE_LIMIT_ERROR);
+      } else {
+        setFormError('Something went wrong. Please try again.');
+      }
     } finally {
       setSubmitting(false);
     }

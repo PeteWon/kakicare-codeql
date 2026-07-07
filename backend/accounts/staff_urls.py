@@ -2,6 +2,7 @@ from django.urls import path
 
 from .views import (
     MFAResetResolveView,
+    StaffMFAResetRequestListView,
     StaffVolunteerDeactivationRequestListView,
     StaffVolunteerDeactivationRequestResolveView,
 )
@@ -17,6 +18,11 @@ urlpatterns = [
         'deactivation-requests/<int:pk>/resolve/',
         StaffVolunteerDeactivationRequestResolveView.as_view(),
         name='staff-deactivation-request-resolve',
+    ),
+    path(
+        'mfa-reset/requests/',
+        StaffMFAResetRequestListView.as_view(),
+        name='staff-mfa-reset-request-list',
     ),
     path(
         'mfa-reset/requests/<int:pk>/resolve/',

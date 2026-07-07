@@ -146,7 +146,39 @@ jobs:
         run: python manage.py migrate --noinput
 
       - name: Run tests
-        run: python manage.py test --verbosity 2
+        run: python manage.py test --verbosity 2 2>&1 | tee test-output.txt
+
+      # Django's test runner has no GitHub Actions job-summary output of its
+      # own (unlike Vitest on the frontend job, which auto-detects CI and
+      # writes one). Parse the captured console output into an equivalent
+      # summary so both jobs surface pass/fail counts the same way.
+      - name: Backend test report summary
+        if: always()
+        run: |
+          if [ ! -f test-output.txt ]; then
+            echo "## Backend Test Report" >> "$GITHUB_STEP_SUMMARY"
+            echo "_No test output captured — an earlier step failed before tests ran._" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          {
+            echo "## Backend Test Report"
+            echo
+            RESULT_LINE=$(grep -E '^(OK|FAILED)' test-output.txt | tail -1)
+            COUNT_LINE=$(grep -E '^Ran [0-9]+ tests? ' test-output.txt | tail -1)
+            if [ "$RESULT_LINE" = "OK" ]; then ICON="✅"; else ICON="❌"; fi
+            echo "- **Result:** $ICON ${RESULT_LINE:-unknown}"
+            echo "- **${COUNT_LINE:-Test count unavailable}**"
+            echo
+            echo "### Tests by app"
+            # -o (not anchored to line start): manage.py test's final migration
+            # log line and the first test result line can land on the same
+            # output line with no newline between them, which an anchored
+            # pattern would silently drop.
+            grep -oE 'test_[a-zA-Z0-9_]+ \([a-zA-Z0-9_.]+\) \.\.\. ' test-output.txt \
+              | sed -E 's/.*\(([a-zA-Z0-9_]+)\..*/\1/' \
+              | sort | uniq -c | sort -rn \
+              | awk '{printf "- **%s**: %s\n", $2, $1}'
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # DAST (SR-DEV-03): dynamic security testing with OWASP ZAP. The Proposal and
   # Report 1 commit to ZAP DAST in CI; we run a passive baseline scan against a

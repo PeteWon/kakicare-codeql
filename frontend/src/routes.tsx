@@ -10,7 +10,7 @@
 // every request, and will be layered in with guards later. Hiding routes on the
 // client is not a security boundary.
 
-import { createBrowserRouter } from 'react-router-dom';
+import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { SmartRedirect } from './components/SmartRedirect';
 
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -32,7 +32,7 @@ import { NotFound } from './pages/public/NotFound';
 
 import { Dashboard } from './pages/volunteer/Dashboard';
 import { Matches } from './pages/volunteer/Matches';
-import { CompleteProfile } from './pages/volunteer/CompleteProfile';
+import { Profile } from './pages/volunteer/Profile';
 import { BookSession } from './pages/volunteer/BookSession';
 import { SessionDetail } from './pages/volunteer/SessionDetail';
 import { SessionHistory } from './pages/volunteer/SessionHistory';
@@ -83,8 +83,11 @@ export const router = createBrowserRouter([
           // sessions must be listed before sessions/:id so the static segment wins.
           { path: 'sessions', element: <SessionHistory /> },
           { path: 'sessions/:id', element: <SessionDetail /> },
-          { path: 'profile', element: <CompleteProfile /> },
-          { path: 'account', element: <AccountSettings /> },
+          { path: 'profile', element: <Profile /> },
+          // Account settings now live inside the combined Profile page. Keep the
+          // old path working (bookmarks, the email-verification deep link) by
+          // redirecting it there.
+          { path: 'account', element: <Navigate to="/volunteer/profile" replace /> },
         ],
       },
     ],

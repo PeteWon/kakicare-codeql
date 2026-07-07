@@ -2,7 +2,9 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 
-from .models import User, VolunteerDeactivationRequest
+from volunteers.models import VolunteerProfile
+
+from .models import MFAResetRequest, User, VolunteerDeactivationRequest
 
 
 class RegisterSerializer(serializers.Serializer):
@@ -167,9 +169,64 @@ class MFAResetResolveSerializer(serializers.Serializer):
     required.
     """
 
-    verification_method = serializers.CharField(required=False, allow_blank=False, max_length=255)
-    verification_outcome = serializers.CharField(required=False, allow_blank=False, max_length=255)
+    # The out-of-band channel staff used to confirm the requester's identity.
+    # 'unable_to_verify' covers cases where no channel could be reached at
+    # all (e.g. no phone number on file) — it may only pair with a 'failed'
+    # outcome (see MFAResetResolveView).
+    verification_method = serializers.ChoiceField(
+        choices=['phone_call', 'video_call', 'email', 'in_person', 'unable_to_verify'],
+        required=False,
+    )
+    # 'success' clears the target's MFA and resolves the request; 'failed'
+    # rejects it and leaves MFA untouched (see MFAResetResolveView).
+    verification_outcome = serializers.ChoiceField(
+        choices=['success', 'failed'], required=False
+    )
     reason = serializers.CharField(required=False, allow_blank=True, max_length=255)
+
+
+class MFAResetRequestReadSerializer(serializers.ModelSerializer):
+    """Staff-facing representation of an MFA reset request queue entry."""
+
+    requester_email = serializers.EmailField(source='requester.email', read_only=True)
+    requester_full_name = serializers.CharField(source='requester.full_name', read_only=True)
+    target_user_email = serializers.EmailField(source='target_user.email', read_only=True)
+    target_user_full_name = serializers.CharField(source='target_user.full_name', read_only=True)
+    target_user_role = serializers.CharField(source='target_user.role', read_only=True)
+    # Volunteers have a phone number on file (staff do not); lets staff call
+    # the number already on record instead of hunting for it elsewhere.
+    target_user_phone = serializers.SerializerMethodField()
+    reviewed_by_email = serializers.EmailField(source='reviewed_by.email', read_only=True)
+
+    def get_target_user_phone(self, obj):
+        try:
+            return obj.target_user.volunteer_profile.contact_number
+        except VolunteerProfile.DoesNotExist:
+            return ''
+
+    class Meta:
+        model = MFAResetRequest
+        fields = [
+            'id',
+            'requester',
+            'requester_email',
+            'requester_full_name',
+            'target_user',
+            'target_user_email',
+            'target_user_full_name',
+            'target_user_role',
+            'target_user_phone',
+            'status',
+            'reason',
+            'verification_method',
+            'verification_outcome',
+            'reviewed_by',
+            'reviewed_by_email',
+            'reviewed_at',
+            'resolved_at',
+            'created_at',
+        ]
+        read_only_fields = fields
 
 
 class VolunteerDeactivationRequestSerializer(serializers.Serializer):

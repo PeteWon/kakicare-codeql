@@ -53,14 +53,49 @@ class UserAdmin(BaseUserAdmin):
         }),
     )
 
+    def has_delete_permission(self, request, obj=None):
+        # Hard-deleting a user conflicts with the append-only audit log
+        # (AuditLogEntry.user is SET_NULL, but audit_auditlogentry has a
+        # Postgres trigger blocking all UPDATE/DELETE — see
+        # audit/migrations/0002_append_only_triggers.py). Deactivate via
+        # is_active instead; audit history for the account is preserved.
+        return False
+
     def save_model(self, request, obj, form, change):
+        was_active = User.objects.get(pk=obj.pk).is_active if change else None
+
         super().save_model(request, obj, form, change)
+
         # On creation, email the new staff member an invite to set their password.
         if not change:
             # Imported here to avoid an import cycle at admin load time.
             from .views import issue_and_send_staff_invite
             issue_and_send_staff_invite(obj)
             self.message_user(request, f'Invite email sent to {obj.email}.')
+            return
+
+        if was_active and not obj.is_active:
+            # Access is already cut immediately regardless — DRF's
+            # SessionAuthentication rechecks is_active per request. This
+            # just clears the now-dead session row (see accounts/sessions.py).
+            from .sessions import invalidate_user_sessions
+            invalidate_user_sessions(obj.pk)
+            record_audit(
+                user=request.user,
+                action='accounts.user.deactivated',
+                target_type='User',
+                target_id=str(obj.pk),
+                request_ip=request.META.get('REMOTE_ADDR'),
+            )
+            self.message_user(request, f'{obj.email} deactivated.')
+        elif not was_active and obj.is_active:
+            record_audit(
+                user=request.user,
+                action='accounts.user.reactivated',
+                target_type='User',
+                target_id=str(obj.pk),
+                request_ip=request.META.get('REMOTE_ADDR'),
+            )
 
     @admin.action(description='Resend staff invite email')
     def resend_staff_invite(self, request, queryset):

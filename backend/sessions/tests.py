@@ -148,7 +148,11 @@ class SessionBookingGuardTests(KakiCareAPITestCase):
         self.url = reverse('volunteer-session-list-create')
 
     def _payload(self):
-        start = timezone.now() + timedelta(days=1)
+        # Pin to a fixed in-window local time (10:00 SGT) so the booking passes
+        # the business-hours check regardless of when the suite actually runs.
+        start = (timezone.localtime(timezone.now()) + timedelta(days=1)).replace(
+            hour=10, minute=0, second=0, microsecond=0
+        )
         return {
             'match_id': self.match.pk,
             'session_type': 'visit',
@@ -166,4 +170,28 @@ class SessionBookingGuardTests(KakiCareAPITestCase):
         resp = self.client.post(self.url, self._payload(), format='json')
         self.assertEqual(resp.status_code, 400)
         # No session row created.
+        self.assertEqual(Session.objects.filter(match=self.match).count(), 0)
+
+    def test_rejects_start_before_business_hours(self):
+        payload = self._payload()
+        start = (timezone.localtime(timezone.now()) + timedelta(days=1)).replace(
+            hour=6, minute=0, second=0, microsecond=0
+        )
+        payload['scheduled_start'] = start.isoformat()
+        payload['scheduled_end'] = (start + timedelta(hours=1)).isoformat()
+        resp = self.client.post(self.url, payload, format='json')
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('scheduled_start', resp.data)
+        self.assertEqual(Session.objects.filter(match=self.match).count(), 0)
+
+    def test_rejects_end_after_business_hours(self):
+        payload = self._payload()
+        start = (timezone.localtime(timezone.now()) + timedelta(days=1)).replace(
+            hour=17, minute=30, second=0, microsecond=0
+        )
+        payload['scheduled_start'] = start.isoformat()
+        payload['scheduled_end'] = (start + timedelta(hours=1)).isoformat()  # 18:30
+        resp = self.client.post(self.url, payload, format='json')
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn('scheduled_end', resp.data)
         self.assertEqual(Session.objects.filter(match=self.match).count(), 0)
