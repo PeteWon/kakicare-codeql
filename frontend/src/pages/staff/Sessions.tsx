@@ -414,8 +414,17 @@ function FollowupFormRow({
 export function Sessions() {
   usePageTitle('Sessions');
   const [searchParams, setSearchParams] = useSearchParams();
-  const statusFilter = (searchParams.get('status') ??
-    'pending_confirmation') as SessionStatus | '';
+  // "All" is represented in the URL by an explicit `status=all` sentinel, NOT by
+  // an absent param. An absent param means "no choice made yet" and falls back
+  // to the default view (pending_confirmation). Without the sentinel, clicking
+  // "All" would clear the param and immediately snap back to the default.
+  const rawStatus = searchParams.get('status');
+  const statusFilter: SessionStatus | '' =
+    rawStatus === null
+      ? 'pending_confirmation'
+      : rawStatus === 'all'
+        ? ''
+        : (rawStatus as SessionStatus);
   const currentPage = Number(searchParams.get('page') ?? '1');
 
   const [loading, setLoading] = useState(true);
@@ -469,7 +478,9 @@ export function Sessions() {
   }, [load]);
 
   function setStatus(s: SessionStatus | '') {
-    setSearchParams(s ? { status: s } : {});
+    // Empty string is the "All" tab → persist it as the `all` sentinel so it
+    // survives a re-render (see rawStatus handling above).
+    setSearchParams(s ? { status: s } : { status: 'all' });
     setConfirmDialogId(null);
     setCancelFormId(null);
     setFollowupFormId(null);
@@ -478,7 +489,8 @@ export function Sessions() {
 
   function setPage(p: number) {
     const params: Record<string, string> = { page: String(p) };
-    if (statusFilter) params.status = statusFilter;
+    // Preserve the current tab across pagination, including "All".
+    params.status = statusFilter || 'all';
     setSearchParams(params);
   }
 
