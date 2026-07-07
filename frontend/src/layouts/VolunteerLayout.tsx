@@ -12,8 +12,8 @@ const NAV_ITEMS: { to: string; label: string; end: boolean }[] = [
   { to: '/volunteer', label: 'Dashboard', end: true },
   { to: '/volunteer/matches', label: 'My Matches', end: false },
   { to: '/volunteer/sessions', label: 'My Sessions', end: false },
+  // Profile now also holds account settings (password, MFA, deactivation).
   { to: '/volunteer/profile', label: 'Profile', end: false },
-  { to: '/volunteer/account', label: 'Account', end: false },
 ];
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
