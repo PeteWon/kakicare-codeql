@@ -133,6 +133,12 @@ class SessionStaffSerializer(serializers.ModelSerializer):
 class SessionBookSerializer(serializers.Serializer):
     """Input: volunteer books a new session."""
 
+    # Befriending sessions may only run within local business hours. Kept in
+    # sync with the client-side window in BookSession.tsx (9am-6pm SGT). This is
+    # the authoritative check — the client validation is usability only.
+    BUSINESS_START_HOUR = 9
+    BUSINESS_END_HOUR = 18
+
     match_id = serializers.IntegerField()
     session_type = serializers.ChoiceField(choices=Session.SessionType.choices)
     scheduled_start = serializers.DateTimeField()
@@ -146,6 +152,24 @@ class SessionBookSerializer(serializers.Serializer):
         if data['scheduled_start'] <= timezone.now():
             raise serializers.ValidationError(
                 {'scheduled_start': 'Must be in the future.'}
+            )
+        # Enforce the local business-hours window. Convert to local time (SGT,
+        # per settings.TIME_ZONE) before checking the hour so the window means
+        # the same thing regardless of the UTC offset in the submitted value.
+        start_local = timezone.localtime(data['scheduled_start'])
+        end_local = timezone.localtime(data['scheduled_end'])
+        if not (self.BUSINESS_START_HOUR <= start_local.hour < self.BUSINESS_END_HOUR
+                or (start_local.hour == self.BUSINESS_END_HOUR and start_local.minute == 0)):
+            raise serializers.ValidationError(
+                {'scheduled_start': 'Sessions must start between 9:00 AM and 6:00 PM.'}
+            )
+        end_after_close = (
+            end_local.hour > self.BUSINESS_END_HOUR
+            or (end_local.hour == self.BUSINESS_END_HOUR and end_local.minute > 0)
+        )
+        if end_local.hour < self.BUSINESS_START_HOUR or end_after_close:
+            raise serializers.ValidationError(
+                {'scheduled_end': 'Sessions must end between 9:00 AM and 6:00 PM.'}
             )
         return data
 

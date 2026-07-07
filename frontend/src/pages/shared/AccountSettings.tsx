@@ -11,7 +11,7 @@ import type { MfaSetupResult, UserRole } from '@/lib/types';
 // Change-password section
 // ---------------------------------------------------------------------------
 
-function ChangePasswordSection() {
+export function ChangePasswordSection() {
   const [current, setCurrent] = useState('');
   const [next, setNext] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -123,7 +123,7 @@ function ChangePasswordSection() {
 // Account deactivation section
 // ---------------------------------------------------------------------------
 
-function DeactivationRequestSection() {
+export function DeactivationRequestSection() {
   const [reason, setReason] = useState('');
   const [reasonError, setReasonError] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -221,7 +221,7 @@ function DeactivationRequestSection() {
 // MFA section
 // ---------------------------------------------------------------------------
 
-function MfaSection({ role }: { role: UserRole }) {
+export function MfaSection({ role }: { role: UserRole }) {
   const [enrolled, setEnrolled] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
   const [disabling, setDisabling] = useState(false);

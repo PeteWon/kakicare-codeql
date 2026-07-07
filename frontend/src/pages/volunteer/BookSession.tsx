@@ -36,9 +36,24 @@ function localToISO(date: string, time: string): string {
   return new Date(`${date}T${time}`).toISOString();
 }
 
+/** Today's date as YYYY-MM-DD in the browser's LOCAL timezone.
+ *  Note: we must NOT use toISOString() here — that returns the UTC date, which
+ *  in SGT (UTC+8) is still "yesterday" until 8am local, letting a volunteer pick
+ *  a past date. Building the string from the local Y/M/D components avoids this. */
 function todayISO(): string {
-  return new Date().toISOString().split('T')[0];
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
+
+// Sessions run within KakiCare befriending hours only. Kept in sync with the
+// backend's server-side check (SessionBookSerializer). Times are "HH:MM" 24h
+// strings, so plain string comparison is safe for range checks.
+const BUSINESS_START = '09:00';
+const BUSINESS_END = '18:00';
+const BUSINESS_HOURS_LABEL = '9:00 AM and 6:00 PM';
 
 // ---------------------------------------------------------------------------
 // Page
@@ -109,7 +124,13 @@ export function BookSession() {
     if (date && startTime && new Date(`${date}T${startTime}`) <= new Date()) {
       errors.startTime = 'Start time must be in the future.';
     }
-    if (date && startTime && endTime) {
+    if (startTime && (startTime < BUSINESS_START || startTime > BUSINESS_END)) {
+      errors.startTime = `Start time must be between ${BUSINESS_HOURS_LABEL}.`;
+    }
+    if (endTime && (endTime < BUSINESS_START || endTime > BUSINESS_END)) {
+      errors.endTime = `End time must be between ${BUSINESS_HOURS_LABEL}.`;
+    }
+    if (date && startTime && endTime && !errors.endTime) {
       if (new Date(`${date}T${endTime}`) <= new Date(`${date}T${startTime}`)) {
         errors.endTime = 'End time must be after start time.';
       }
@@ -294,6 +315,9 @@ export function BookSession() {
                 id="start-time"
                 type="time"
                 value={startTime}
+                min={BUSINESS_START}
+                max={BUSINESS_END}
+                step={900}
                 onChange={(e) => {
                   setStartTime(e.target.value);
                   setFieldErrors((p) => ({ ...p, startTime: undefined }));
@@ -322,6 +346,9 @@ export function BookSession() {
                 id="end-time"
                 type="time"
                 value={endTime}
+                min={BUSINESS_START}
+                max={BUSINESS_END}
+                step={900}
                 onChange={(e) => {
                   setEndTime(e.target.value);
                   setFieldErrors((p) => ({ ...p, endTime: undefined }));
@@ -339,6 +366,10 @@ export function BookSession() {
               )}
             </div>
           </div>
+
+          <p className="text-xs text-primary-500">
+            Sessions can be scheduled between {BUSINESS_HOURS_LABEL}.
+          </p>
 
           {submitError && (
             <div className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700">
