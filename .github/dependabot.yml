@@ -33,6 +33,12 @@ updates:
     schedule:
       interval: weekly
     labels: ["dependencies", "docker"]
+    # Pin the Python base image to 3.13: it is the newest Python on Django 5.2's
+    # officially supported matrix (3.10-3.13). 3.14 builds but is not a supported
+    # Django 5.2 target, so ignore major/minor bumps and let patch rebuilds through.
+    ignore:
+      - dependency-name: "python"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
   - package-ecosystem: docker
     directory: /nginx
     schedule:
