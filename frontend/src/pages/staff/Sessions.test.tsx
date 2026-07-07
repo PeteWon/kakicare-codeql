@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { Sessions } from './Sessions';
@@ -127,6 +127,31 @@ describe('Sessions — cancel flow (CancelFormRow)', () => {
     await user.click(submit);
 
     expect(mockedApi.cancelSession).toHaveBeenCalledWith(1, 'Senior unavailable');
+  });
+});
+
+describe('Sessions — status filter', () => {
+  it('selecting "All" loads every status instead of snapping back to the default', async () => {
+    const user = userEvent.setup();
+    mockList(makeSession({ status: 'confirmed' }));
+
+    renderSessions();
+
+    // Initial load uses the default (pending_confirmation) filter.
+    await screen.findByRole('button', { name: 'All' });
+    expect(mockedApi.getStaffSessions).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'pending_confirmation' }),
+    );
+
+    // Clicking "All" must request with no status filter (regression: it used to
+    // clear the URL param and revert to pending_confirmation).
+    await user.click(screen.getByRole('button', { name: 'All' }));
+
+    await waitFor(() =>
+      expect(mockedApi.getStaffSessions).toHaveBeenLastCalledWith(
+        expect.objectContaining({ status: undefined }),
+      ),
+    );
   });
 });
 

@@ -78,7 +78,17 @@ const FILTER_OPTIONS: { value: '' | StaffMatchStatus; label: string }[] = [
 export function StaffMatches() {
   usePageTitle('Matches');
   const [searchParams, setSearchParams] = useSearchParams();
-  const statusFilter = (searchParams.get('status') ?? 'proposed') as StaffMatchStatus | '';
+  // "All" is represented by an explicit `status=all` sentinel, not by an absent
+  // param — an absent param means "no choice yet" and falls back to the default
+  // (proposed). Without the sentinel, clicking "All" would clear the param and
+  // immediately snap back to the default view.
+  const rawStatus = searchParams.get('status');
+  const statusFilter: StaffMatchStatus | '' =
+    rawStatus === null
+      ? 'proposed'
+      : rawStatus === 'all'
+        ? ''
+        : (rawStatus as StaffMatchStatus);
   const currentPage = Number(searchParams.get('page') ?? '1');
   const location = useLocation();
   const successMessage = (location.state as { successMessage?: string } | null)
@@ -120,12 +130,15 @@ export function StaffMatches() {
   useEffect(() => { void load(); }, [load]);
 
   function setStatus(s: '' | StaffMatchStatus) {
-    setSearchParams(s ? { status: s } : {});
+    // Empty string is the "All" tab → persist it as the `all` sentinel so it
+    // survives a re-render (see rawStatus handling above).
+    setSearchParams(s ? { status: s } : { status: 'all' });
   }
 
   function setPage(p: number) {
     const params: Record<string, string> = { page: String(p) };
-    if (statusFilter) params.status = statusFilter;
+    // Preserve the current tab across pagination, including "All".
+    params.status = statusFilter || 'all';
     setSearchParams(params);
   }
 
