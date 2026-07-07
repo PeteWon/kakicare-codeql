@@ -20,6 +20,7 @@ from .mfa import (
     MFASetupView,
     MFAStatusView,
     MFAVerifyView,
+    StaffMFAResetRequestListView,
     _generate_backup_codes,
 )
 from .password import (
@@ -47,6 +48,7 @@ __all__ = [
     'MFAVerifyView',
     'MFAResetRequestView',
     'MFAResetResolveView',
+    'StaffMFAResetRequestListView',
     'MFAStatusView',
     'MFADisableView',
     # password
