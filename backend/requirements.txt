@@ -11,7 +11,7 @@
 #   psycopg[binary]        PostgreSQL driver
 #   gunicorn               production WSGI server (only used in Docker prod image)
 
-Django==5.2.14
+Django==6.0.7
 djangorestframework==3.17.1
 django-cors-headers==4.9.0
 argon2-cffi==25.1.0
