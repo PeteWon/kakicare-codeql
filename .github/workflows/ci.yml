@@ -106,7 +106,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           # Match the deployed image (backend/Dockerfile → python:3.13-slim) so
           # the version we test on is the version we ship. 3.13 is the newest on
@@ -231,7 +231,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
           cache: 'pip'
