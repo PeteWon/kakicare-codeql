@@ -18,7 +18,7 @@ argon2-cffi==25.1.0
 django-otp==1.7.0
 django-environ==0.14.0
 psycopg[binary]==3.3.4
-gunicorn==26.0.0
+gunicorn==26.1.0
 cryptography==49.0.0
 
 # --- transitive (pinned for reproducible builds) ---
